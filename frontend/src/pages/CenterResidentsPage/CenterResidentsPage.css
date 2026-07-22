@@ -1,0 +1,414 @@
+/* --- Paso 1: Encabezado y Capacidad --- */
+
+.residents-header {
+  text-align: center; /* Centramos el título "Familias/Personas..." */
+  border-bottom: 1px solid #eee;
+  padding-bottom: 20px;
+}
+
+.capacity-info {
+  display: flex; /* Cambia a horizontal */
+  justify-content: space-around; /* Distribuye el espacio */
+  gap: 15px;
+  background-color: #f8f9fa; /* Color de fondo suave */
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  border: 1px solid #dee2e6;
+}
+
+.capacity-info p {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.capacity-info p strong {
+  color: #0056b3; /* Color para las etiquetas */
+  margin-right: 8px;
+}
+/* --- Paso 2: Estilo de Tarjeta de Detalle v2 --- */
+
+.family-details-row {
+  background-color: #f9f9f9; /* Fondo suave para la fila expandida */
+}
+
+.family-details-card-v2 {
+  background-color: #ffffff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  margin: 15px;
+}
+
+/* 2a: Cabecera de la Tarjeta (Fecha de Ingreso) */
+.card-header-v2 {
+  padding: 15px 20px;
+  border-bottom: 1px solid #eee;
+  background-color: #fdfdfd;
+}
+
+.header-meta-v2 {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+}
+
+.meta-icon {
+  color: #007bff;
+  font-size: 1.2rem;
+}
+
+.meta-label {
+  font-weight: 600;
+  color: #555;
+}
+
+.meta-value {
+  font-weight: 700;
+  color: #111;
+}
+
+/* 2b: Cuerpo de la Tarjeta (Observaciones, Necesidades) */
+.card-body-v2 {
+  padding: 20px;
+}
+
+.section-title-v2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #333;
+  margin-top: 0;
+  margin-bottom: 10px;
+  border-bottom: 2px solid #007bff;
+  padding-bottom: 5px;
+  display: inline-block;
+}
+
+.observations-text-v2 {
+  font-size: 0.95rem;
+  color: #444;
+  line-height: 1.5;
+  margin-bottom: 20px;
+}
+
+.needs-list-v2 {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  margin-bottom: 25px;
+}
+
+.need-badge {
+  background-color: #e7f3ff;
+  color: #0056b3;
+  padding: 5px 10px;
+  border-radius: 15px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid #b8d6f3;
+}
+/* --- Paso 3: Tabla de Miembros (Interna) --- */
+
+.members-title {
+  margin-top: 20px;
+}
+
+.members-table-v2 {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  font-size: 0.9rem;
+}
+
+.members-table-v2 th,
+.members-table-v2 td {
+  border: 1px solid #ddd;
+  padding: 8px 10px;
+  text-align: left;
+}
+
+.members-table-v2 th {
+  background-color: #f4f4f4;
+  font-weight: 600;
+}
+
+/* Fila del Jefe de Hogar */
+.members-table-v2 tr.is-head {
+  background-color: #fffbe6; /* Amarillo suave */
+  font-weight: 600;
+}
+
+/* Insignias de Parentesco */
+.head-badge, .member-badge {
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: white;
+}
+.head-badge {
+  background-color: #dc3545; /* Rojo */
+}
+.member-badge {
+  background-color: #6c757d; /* Gris */
+}
+
+/* Insignias de Sí/No (Estudia, Trabaja, etc.) */
+.value-yes, .value-no {
+  font-weight: 700;
+}
+.value-yes {
+  color: #28a745; /* Verde */
+}
+.value-no {
+  color: #dc3545; /* Rojo */
+}
+/* --- Paso 4: Tarjeta de Filtros (Vista Persona) --- */
+
+.filters-card {
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 25px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+}
+
+.filters-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 10px;
+}
+
+.filters-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.btn-secondary-outlined {
+  background: #fff;
+  color: #007bff;
+  border: 1px solid #007bff;
+  padding: 8px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+.btn-secondary-outlined:hover {
+  background: #007bff;
+  color: #fff;
+}
+
+.filters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 15px;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-field span {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 5px;
+  color: #333;
+}
+
+.filter-field input,
+.filter-field select {
+  padding: 8px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.95rem;
+}
+/* --- Estilos de Sección (Contenedor de Tarjeta) --- */
+
+.residents-section {
+  background-color: #ffffff;
+  border-radius: 8px;
+  border: 1px solid #dee2e6;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  margin-bottom: 25px;
+  overflow: hidden; /* Para que el header se vea bien */
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px 20px;
+  background-color: #007bff; /* Fondo azul como en la imagen */
+  color: white;
+  border-bottom: 1px solid #0056b3;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+}
+
+.section-title h2 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.section-icon {
+  font-size: 1.8rem !important; /* Icono más grande */
+}
+
+.section-count {
+  font-size: 1rem;
+  font-weight: 400;
+  opacity: 0.8;
+  margin-left: 5px;
+}
+
+.section-content {
+  padding: 20px;
+}
+
+/* --- Anchos para Tabla Grupos Familiares --- */
+
+.residents-table {
+  /* 1. Hacemos que la tabla respete los anchos fijos */
+  table-layout: fixed;
+  width: 100%;
+}
+
+/* 2. Asignamos anchos a cada columna por su orden */
+.residents-table th:nth-child(1) { width: 35%; } /* Columna 1: Jefe de Hogar */
+.residents-table th:nth-child(2) { width: 20%; } /* Columna 2: RUT */
+.residents-table th:nth-child(3) { width: 15%; } /* Columna 3: Miembros */
+.residents-table th:nth-child(4) { width: 30%; } /* Columna 4: Acciones */
+
+/* --- Anchos para Tabla Personas --- */
+
+.people-table {
+  /* 1. Hacemos que la tabla respete los anchos fijos */
+  table-layout: fixed;
+  width: 100%; /* Opcional: puedes poner un ancho fijo más grande si prefieres scroll */
+  /* min-width: 1200px; */ /* <-- Descomenta esta línea si prefieres scroll horizontal */
+}
+
+/* 2. Asignamos anchos a cada columna */
+.people-table th:nth-child(1) { width: 25%; } /* Columna 1: Nombre Completo */
+.people-table th:nth-child(2) { width: 12%; } /* Columna 2: RUT */
+.people-table th:nth-child(3) { width: 12%; } /* Columna 3: Fecha Ingreso */
+.people-table th:nth-child(4) { width: 12%; } /* Columna 4: Fecha Salida */
+.people-table th:nth-child(5) { width: 7%; }  /* Columna 5: Edad */
+.people-table th:nth-child(6) { width: 8%; }  /* Columna 6: Género */
+.people-table th:nth-child(7) { width: 12%; } /* Columna 7: Nacionalidad */
+.people-table th:nth-child(8) { width: 12%; } /* Columna 8: Acción */
+/* Agrega más :nth-child(N) si tienes más columnas */
+
+.residents-table td,
+.people-table td {
+  /* Con esto, el texto que no cabe se corta con "..." */
+  white-space: nowrap;  /* No permite que el texto salte a la línea de abajo */
+  overflow: hidden;     /* Oculta el texto que se desborda */
+  text-overflow: ellipsis; /* Pone los "..." */
+}
+
+/* PERO: Quizás no quieres esto en la columna de "Acciones", 
+  ya que cortaría los botones. 
+  Vamos a anularlo para la última columna de ambas tablas:
+*/
+.residents-table th:last-child,
+.residents-table td:last-child,
+.people-table th:last-child,
+.people-table td:last-child {
+  white-space: normal;  /* Permite que el contenido se ajuste (los botones) */
+  overflow: visible;
+}
+
+/* --- Estilos para Header y Botón Exportar --- */
+
+.residents-header {
+  display: flex; /* Activa Flexbox */
+  justify-content: space-between; /* Espacio entre izq. y der. */
+  align-items: center; /* Centra verticalmente */
+  border-bottom: 1px solid #eee;
+  padding-bottom: 20px;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.header-right {
+  /* El botón de exportar se alinea a la derecha */
+}
+
+/* El color verde agua clarito que pediste */
+.btn-export-new {
+  background-color: #a6e9d5; /* Verde agua claro */
+  color: #004d40; /* Texto verde oscuro para contraste */
+  border: 1px solid #004d40;
+  padding: 10px 16px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+}
+
+.btn-export-new:hover {
+  background-color: #004d40;
+  color: #ffffff;
+}
+
+/* --- Estilos para el Nuevo Modal de Exportación --- */
+.export-modal .form-group {
+  margin-bottom: 20px;
+}
+
+.export-modal .form-group label {
+  font-weight: 600;
+  font-size: 1rem;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.export-modal .radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.export-modal .radio-group label {
+  font-weight: 400;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.export-modal input[type="radio"] {
+  margin: 0;
+}

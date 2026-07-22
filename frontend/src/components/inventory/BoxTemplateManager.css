@@ -1,0 +1,575 @@
+/* src/components/inventory/BoxTemplateManager.css */
+
+/* Overlay */
+.entry-form-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  overflow-y: auto;
+  padding: 20px 0;
+}
+
+/* Modal */
+.entry-form-modal {
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 50%, #f1f3f4 100%);
+  border-radius: 12px;
+  width: 90%;
+  max-width: 1000px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(99, 102, 241, 0.15), 0 4px 20px rgba(0, 0, 0, 0.1);
+  margin: auto;
+  border: 1px solid rgba(99, 102, 241, 0.1);
+}
+
+.entry-form-container {
+  background: transparent;
+  border-radius: 12px;
+}
+
+/* Header */
+.entry-form-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 2px solid rgba(99, 102, 241, 0.1);
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  border-radius: 12px 12px 0 0;
+}
+
+.entry-form-header h3 {
+  margin: 0;
+  color: white;
+  font-size: 1.4em;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.close-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: white;
+  padding: 0;
+  width: 35px;
+  height: 35px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  line-height: 1;
+  font-family: Arial, sans-serif;
+  vertical-align: middle;
+}
+
+.close-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: scale(1.05);
+}
+
+/* Content */
+.entry-form {
+  padding: 20px;
+}
+
+/* Form Section */
+.form-section {
+  margin-bottom: 25px;
+  padding: 15px;
+  border: 1px solid #eee;
+  border-radius: 6px;
+  background-color: #fafafa;
+}
+
+.form-section h4 {
+  margin: 0 0 15px 0;
+  color: #333;
+  font-size: 1.1em;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #ddd;
+}
+
+/* Form Group */
+.form-group {
+  margin-bottom: 15px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 600;
+  color: #333;
+}
+
+.form-group input,
+.form-group textarea,
+.form-group select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+  box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+.form-group textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+/* Items Header */
+.items-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.items-header h4 {
+  margin: 0;
+  flex: 1;
+}
+
+/* Templates Grid */
+.templates-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+  margin-top: 20px;
+}
+
+.template-card {
+  background: #ffffff !important;
+  border: 2px solid #000000;
+  border-radius: 8px;
+  padding: 20px;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.template-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: #6366f1;
+  transform: translateY(-2px);
+}
+
+.template-card h5 {
+  margin: 0 0 10px 0;
+  color: #333;
+  font-size: 1.1em;
+}
+
+.template-description {
+  color: #666;
+  font-size: 0.9em;
+  margin: 10px 0;
+  line-height: 1.4;
+}
+
+.template-items-count {
+  color: #6366f1;
+  font-size: 0.85em;
+  font-weight: 600;
+  margin: 10px 0;
+}
+
+/* Lista de ítems dentro de cada plantilla */
+.template-items-list {
+  margin: 15px 0;
+  padding: 12px;
+  background-color: #ffffff;
+  border-radius: 6px;
+  border: 2px solid #000000;
+}
+
+.template-items-list h6 {
+  margin: 0 0 8px 0;
+  font-size: 0.85em;
+  color: #495057;
+  font-weight: 600;
+}
+
+.items-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.item-entry {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 2px solid #e9ecef;
+  font-size: 0.85em;
+}
+
+.item-entry:last-child {
+  border-bottom: none;
+}
+
+.item-name {
+  color: #333;
+  font-weight: 500;
+  flex: 1;
+}
+
+.item-quantity {
+  color: #6c757d;
+  font-weight: 600;
+  white-space: nowrap;
+  margin-left: 10px;
+}
+
+.template-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.template-actions .btn-edit {
+  flex: 1;
+  background-color: #007bff !important;
+  color: white !important;
+  border: none !important;
+  border-radius: 8px !important;
+  padding: 10px 16px !important;
+  cursor: pointer;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+  transition: all 0.3s ease !important;
+  box-shadow: 0 2px 4px rgba(0, 123, 255, 0.3) !important;
+  text-transform: none !important;
+  letter-spacing: 0.5px !important;
+}
+
+.template-actions .btn-edit:hover {
+  background-color: #0056b3 !important;
+  box-shadow: 0 4px 12px rgba(0, 123, 255, 0.4) !important;
+  transform: translateY(-1px) !important;
+}
+
+.btn-delete {
+  flex: 1;
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 15px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn-delete:hover {
+  background-color: #c82333;
+}
+
+/* Items List */
+.items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background-color: white;
+  gap: 15px;
+  transition: all 0.2s;
+}
+
+.item-row:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* Item Info */
+.item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.item-name {
+  font-weight: 600;
+  color: #333;
+  font-size: 1em;
+}
+
+.item-category {
+  font-size: 0.9em;
+  color: #666;
+  font-style: italic;
+}
+
+.item-quantity {
+  font-size: 0.85em;
+  color: #007bff;
+}
+
+.new-item-badge {
+  display: inline-block;
+  background: linear-gradient(135deg, #ff6b9d 0%, #c06c84 100%);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75em;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+/* Remove Button */
+.remove-item-btn {
+  background: #6c757d;
+  border: none;
+  cursor: pointer;
+  padding: 12px;
+  border-radius: 50%;
+  font-size: 18px;
+  color: white;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.remove-item-btn:hover:not(:disabled) {
+  background: #dc3545;
+  transform: scale(1.1);
+}
+
+.remove-item-btn:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+/* Empty Items */
+.empty-items {
+  text-align: center;
+  padding: 30px;
+  color: #666;
+  border: 2px dashed #ddd;
+  border-radius: 6px;
+  background-color: #f9f9f9;
+}
+
+.empty-items p {
+  margin: 0;
+}
+
+/* Buttons */
+.add-item-btn {
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 15px;
+  font-size: 0.9em;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.add-item-btn:hover:not(:disabled) {
+  background-color: #0056b3;
+  transform: translateY(-1px);
+}
+
+.add-item-btn:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Form Actions */
+.form-actions {
+  display: flex;
+  gap: 15px;
+  justify-content: flex-end;
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 2px solid #eee;
+}
+
+.btn-secondary {
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 12px 25px;
+  font-size: 1em;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: #5a6268;
+}
+
+.btn-primary {
+  background-color: #6366f1;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 12px 25px;
+  font-size: 1em;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #5b21b6;
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+/* Modal Overlay (for add item) */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  padding: 25px;
+}
+
+.modal-content h4 {
+  margin: 0 0 20px 0;
+  color: #333;
+  font-size: 1.2em;
+  border-bottom: 2px solid #eee;
+  padding-bottom: 10px;
+}
+
+/* Radio Group */
+.radio-group {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 15px;
+}
+
+.radio-group label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.radio-group input[type="radio"] {
+  width: auto;
+  cursor: pointer;
+}
+
+/* Modal Actions */
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid #eee;
+}
+
+/* Alert */
+.alert-warning {
+  background-color: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 6px;
+  padding: 15px;
+  margin: 15px 0;
+  color: #856404;
+}
+
+.alert-warning p {
+  margin: 0;
+  font-weight: 500;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .entry-form-modal {
+    width: 95%;
+    margin: 10px;
+  }
+
+  .templates-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .item-row {
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch;
+  }
+  
+  .items-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .form-actions {
+    flex-direction: column;
+  }
+
+  .template-actions {
+    flex-direction: column;
+  }
+
+  .remove-item-btn {
+    align-self: flex-end;
+  }
+}

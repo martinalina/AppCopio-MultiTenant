@@ -1,0 +1,771 @@
+/* src/pages/InventoryPage/InventoryPage.css */
+.inventory-container {
+  padding: 20px;
+}
+
+.inventory-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #eee;
+  padding-bottom: 10px;
+}
+
+.inventory-header h3 {
+  margin: 0;
+}
+
+.add-item-btn {
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  padding: 10px 15px;
+  font-size: 0.9em;
+  cursor: pointer;
+}
+
+.add-item-btn:hover {
+  background-color: #218838;
+}
+
+.category-section {
+  margin-bottom: 30px;
+}
+
+.category-section h4 {
+  color: #337ab7;
+  margin-bottom: 10px;
+}
+
+/* Filtros horizontales */
+.filters-horizontal-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.filter-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.filter-container label {
+  white-space: nowrap;
+  font-weight: 600;
+  color: #495057;
+}
+
+.filter-container select {
+  padding: 8px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  background-color: white;
+  font-size: 14px;
+  min-width: 180px;
+}
+
+.filter-container select:focus {
+  outline: none;
+  border-color: #80bdff;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+/* Inventory table with fixed columns */
+.inventory-table {
+  width: 100%;
+  border-collapse: collapse;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  table-layout: fixed;
+}
+
+.inventory-table th, .inventory-table td {
+  border: 1px solid #ddd;
+  padding: 12px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Fixed column widths for perfect alignment */
+.inventory-table th:nth-child(1), 
+.inventory-table td:nth-child(1) {
+  width: 35%;
+  font-weight: 500;
+}
+
+.inventory-table th:nth-child(2), 
+.inventory-table td:nth-child(2) {
+  width: 20%;
+  text-align: center;
+}
+
+.inventory-table th:nth-child(3), 
+.inventory-table td:nth-child(3) {
+  width: 25%;
+  text-align: center;
+  font-size: 13px;
+}
+
+.inventory-table th:nth-child(4), 
+.inventory-table td:nth-child(4) {
+  width: 20%;
+  text-align: center;
+}
+
+.inventory-table th {
+  background-color: #f9f9f9;
+  font-weight: bold;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+
+
+/* Estilos estandarizados para todos los botones principales */
+.action-btn,
+.movements-btn {
+  background-color: #000000;   /* negro sólido */
+  color: #ffffff;
+  border: none;
+  border-radius: 5px;
+  padding: 8px 14px;
+  font-size: 0.9em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-width: 120px;
+  min-height: 34px;
+  text-decoration: none;       /* por si es un <Link> */
+}
+
+
+.action-btn:hover,
+.movements-btn:hover {
+  background-color: #000000;   /* sin cambio de color */
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.movements-btn:active {
+  background-color: #111111;   /* leve oscurecimiento al click */
+}
+
+/* Colores específicos para movement-btn */
+.entry-btn {
+  background-color: #000000;   /* negro sólido */
+  color: #ffffff;
+  border: none;
+  border-radius: 5px;
+  padding: 8px 14px;           /* igual que el de necesidades */
+  font-size: 0.9em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-width: 120px;
+  min-height: 34px;
+}
+
+.entry-btn:hover {
+  background-color: #000000;   /* sin cambio de color */
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.entry-btn:active {
+  background-color: #111111;   /* leve oscurecimiento al click */
+}
+
+.exit-btn {
+  background-color: #000000;   /* negro sólido */
+  color: #ffffff;
+  border: none;
+  border-radius: 5px;
+  padding: 8px 14px;
+  font-size: 0.9em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-width: 120px;
+  min-height: 34px;
+}
+
+.exit-btn:hover {
+  background-color: #000000;   /* sin cambio de color */
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.exit-btn:active {
+  background-color: #111111;   /* leve oscurecimiento al click */
+}
+
+.box-btn {
+  background-color: #000000;   /* negro sólido */
+  color: #ffffff;
+  border: none;
+  border-radius: 5px;
+  padding: 8px 14px;
+  font-size: 0.9em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-width: 120px;
+  min-height: 34px;
+}
+
+.box-btn:hover {
+  background-color: #000000;   /* sin cambio de color */
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.box-btn:active {
+  background-color: #111111;   /* leve oscurecimiento al click */
+}
+
+/* Colores específicos para action-btn */
+.action-btn {
+  background-color: #000000;   /* negro sólido */
+  color: #ffffff;
+  border: none;
+  border-radius: 5px;
+  padding: 8px 14px;
+  font-size: 0.9em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-width: 120px;
+  min-height: 34px;
+}
+
+.action-btn:hover {
+  background-color: #000000;   /* sin cambio de color */
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.action-btn:active {
+  background-color: #111111;   /* leve oscurecimiento al click */
+}
+
+/* Colores específicos para botones de historial (amarillo original) */
+.history-btn {
+  background-color: #000000;   /* negro sólido */
+  color: #ffffff;
+  border: none;
+  border-radius: 5px;
+  padding: 8px 14px;
+  font-size: 0.9em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  min-width: 120px;
+  min-height: 34px;
+  text-decoration: none;       /* importante si es <Link> */
+}
+
+.history-btn:hover {
+  background-color: #000000;   /* sin cambio de color */
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.history-btn:active {
+  background-color: #111111;   /* leve oscurecimiento al click */
+}
+/* ... tus estilos existentes de la tabla ... */
+
+/* Estilos para el Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: rgb(32, 30, 30);
+  padding: 30px;
+  border-radius: 8px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+}
+
+.modal-content h3 {
+  margin-top: 0;
+}
+
+.modal-content .form-group {
+  margin-bottom: 15px;
+}
+
+.modal-content label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+.modal-content input, .modal-content select {
+  width: 100%;
+  padding: 10px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+}
+
+.quantity-input {
+  display: flex;
+  align-items: center;
+}
+
+.quantity-input button {
+  width: 40px;
+  height: 40px;
+  font-size: 1.2em;
+  border: 1px solid #ccc;
+  background-color: #f0f0f0;
+  cursor: pointer;
+}
+
+.quantity-input input {
+  text-align: center;
+  border-left: none;
+  border-right: none;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.modal-actions .btn-secondary {
+  background-color: #6c757d;
+  color: white;
+}
+
+.modal-actions .btn-primary {
+  background-color: #007bff;
+  color: white;
+}
+
+
+.modal-actions.edit-actions {
+  display: flex;
+  justify-content: space-between; /* Alinea los botones a los extremos */
+  align-items: center;
+}
+
+.modal-actions .btn-danger {
+  background-color: #dc3545;
+  color: white;
+}
+.btn-clear-filter {
+  background-color: #4FC3F7 !important; /* celeste */
+  color: white !important;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.btn-clear-filter:hover {
+  background-color: #039BE5 !important; /* celeste más fuerte al pasar el mouse */
+}
+
+/* HdU09: Estilos para los botones de toggle */
+.toggle-buttons-container {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.toggle-needs-btn {
+  background-color: #000000;   /* negro sólido */
+  color: #ffffff;
+  border: none;
+  border-radius: 5px;
+  padding: 8px 14px;           /* 🔹 más pequeño que antes */
+  font-size: 0.9em;            /* 🔹 texto más fino */
+  font-weight: 500;            /* 🔹 menos grueso */
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 120px;            /* 🔹 más compacto */
+  min-height: 34px;            /* 🔹 altura controlada */
+}
+
+.toggle-needs-btn:hover {
+  background-color: #000000;   /* no cambia color */
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.toggle-needs-btn.active {
+  background-color: #111111;   /* leve variación en activo */
+}
+
+.toggle-needs-btn.active:hover {
+  background-color: #111111;
+  color: #ffffff;
+}
+
+/* Estilos específicos para el contenedor de botones */
+.actions-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+/* Responsive para la header */
+@media (max-width: 768px) {
+  .inventory-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+  
+  .actions-container {
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  .filters-horizontal-container {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+  
+  .filter-container {
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+  }
+  
+  .filter-container select {
+    min-width: 100%;
+  }
+  
+  /* Responsive table columns */
+  .inventory-table th:nth-child(1), 
+  .inventory-table td:nth-child(1) {
+    width: 40%;
+  }
+  
+  .inventory-table th:nth-child(2), 
+  .inventory-table td:nth-child(2) {
+    width: 15%;
+  }
+  
+  .inventory-table th:nth-child(3), 
+  .inventory-table td:nth-child(3) {
+    width: 25%;
+  }
+  
+  .inventory-table th:nth-child(4), 
+  .inventory-table td:nth-child(4) {
+    width: 20%;
+  }
+}
+
+/* HdU11: Estilos para indicadores de eliminación */
+.item-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-start;
+}
+
+.delete-warning {
+  font-size: 0.8em;
+  color: #dc3545;
+  font-weight: 600;
+  padding: 2px 6px;
+  background-color: #f8d7da;
+  border-radius: 3px;
+  border: 1px solid #f5c6cb;
+  cursor: help;
+}
+
+.can-delete {
+  font-size: 0.8em;
+  color: #28a745;
+  font-weight: 600;
+  padding: 2px 6px;
+  background-color: #d4edda;
+  border-radius: 3px;
+  border: 1px solid #c3e6cb;
+  cursor: help;
+}
+
+/* Estilos específicos para el contenedor de botones */
+.actions-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+/* Responsive para la header */
+@media (max-width: 768px) {
+  .inventory-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+  
+  .actions-container {
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  .filters-horizontal-container {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 15px;
+  }
+  
+  .filter-container {
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+  }
+  
+  .filter-container select {
+    min-width: 100%;
+  }
+  
+  /* Responsive table columns */
+  .inventory-table th:nth-child(1), 
+  .inventory-table td:nth-child(1) {
+    width: 40%;
+  }
+  
+  .inventory-table th:nth-child(2), 
+  .inventory-table td:nth-child(2) {
+    width: 15%;
+  }
+  
+  .inventory-table th:nth-child(3), 
+  .inventory-table td:nth-child(3) {
+    width: 25%;
+  }
+  
+  .inventory-table th:nth-child(4), 
+  .inventory-table td:nth-child(4) {
+    width: 20%;
+  }
+}
+
+/* HdU11: Estilos para indicadores de eliminación */
+.item-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-start;
+}
+
+.delete-warning {
+  font-size: 0.8em;
+  color: #dc3545;
+  font-weight: 600;
+  padding: 2px 6px;
+  background-color: #f8d7da;
+  border-radius: 3px;
+  border: 1px solid #f5c6cb;
+  cursor: help;
+}
+
+.can-delete {
+  font-size: 0.8em;
+  color: #28a745;
+  font-weight: 600;
+  padding: 2px 6px;
+  background-color: #d4edda;
+  border-radius: 3px;
+  border: 1px solid #c3e6cb;
+  cursor: help;
+}
+
+.priority-select {
+  border-radius: 6px;
+  padding: 5px 10px;                  /* 🔹 un poco más pequeño */
+  font-weight: 500;                   /* 🔹 texto más fino */
+  font-size: 0.85em;                  /* 🔹 tamaño de letra reducido */
+  color: white;
+  border: none;
+  outline: none;
+  cursor: pointer;
+  transition: transform 0.2s ease, background-color 0.3s ease;
+  margin-left: 24px;                  /* separación respecto al botón Editar */
+  text-align: center;
+}
+
+.priority-select:hover {
+  transform: translateY(-1px);        /* leve elevación */
+}
+.priority-alto {
+  background-color: #e74c3c; /* rojo */
+}
+
+.priority-medio {
+  background-color: #ff8c42; /* naranja cálido */
+  color: white; /* texto en blanco para buen contraste */
+}
+
+.priority-bajo {
+  background-color: #2ecc71; /* verde */
+}
+
+/* Mostrar las opciones del desplegable con fondo blanco y texto oscuro
+   para una apariencia limpia y legible en la mayoría de navegadores. */
+select.priority-select option {
+  background-color: white !important;
+  color: #222 !important; /* texto oscuro para mejor contraste */
+}
+
+/* Mantener blanco al hover/focus (best-effort, algunos navegadores pueden ignorar) */
+select.priority-select option:hover,
+select.priority-select option:focus {
+  background-color: white !important;
+  color: #222 !important;
+}
+
+/* Cuando la propia select muestra el valor, usar clases para colorearla */
+select.priority-select.priority-bajo {
+  background-color: #2ecc71;
+  color: white;
+}
+select.priority-select.priority-medio {
+  background-color: #ff8c42;
+  color: white;
+}
+select.priority-select.priority-alto {
+  background-color: #e74c3c;
+  color: white;
+}
+/* === Centrar todo el contenido dentro de la columna Acciones === */
+.item-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;     /* Centra horizontalmente */
+  justify-content: center; /* Centra verticalmente */
+  gap: 6px;                /* Espacio parejo entre elementos */
+  height: 100%;            /* Ocupa toda la altura de la celda */
+  text-align: center;
+}
+
+/* Botón principal (Editar) centrado */
+.item-actions .action-btn {
+  background-color: #000;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 6px 12px;
+  font-size: 0.85em;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  min-width: 90px;
+  text-align: center;
+}
+
+.item-actions .action-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+/* Etiqueta de stock (bloque rojo pequeño) */
+.item-actions .delete-warning {
+  display: inline-block;
+  font-size: 0.8em;
+  color: #b52d2d;
+  font-weight: 600;
+  padding: 2px 8px;
+  background-color: #f8d7da;
+  border-radius: 4px;
+  border: 1px solid #f5c6cb;
+  text-align: center;
+}
+
+/* Selector de prioridad centrado y compacto */
+.item-actions .priority-select {
+  width: auto;
+  font-size: 0.8em;
+  padding: 4px 10px;
+  border-radius: 5px;
+  margin-left: 0;
+  text-align: center;
+}
+/* 🔵 Estilo azul solo para el botón Editar */
+.item-actions .action-btn {
+  background-color: #2d6cdf;       /* azul elegante */
+  color: #ffffff;
+}
+
+.item-actions .action-btn:hover {
+  background-color: #1e4faa;       /* azul más oscuro al hover */
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.item-actions .action-btn:active {
+  background-color: #193f8a;       /* azul profundo al click */
+}

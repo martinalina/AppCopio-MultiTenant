@@ -1,0 +1,416 @@
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import OperationalStatusControl from "@/components/center/OperationalStatusControl";
+import "./CenterDetailsPage.css";
+import PageHeader from "@/components/common/PageHeader";
+
+import type { CenterData, Center } from "@/types/center";
+import {
+  getOneCenter,
+  mapStatusToFrontend,
+  updateOperationalStatus,
+  OperationalStatusUI,
+} from "@/services/centers.service";
+import { listCenterInventory } from "@/services/inventory.service";
+
+import { getOmzZoneForCenter } from "@/services/zones.service";
+import { 
+  listNotificationsByCenter, 
+  createNotification,
+  CenterNotification 
+} from '@/services/notifications.service';
+import NotificationsHistory from '@/components/notification/NotificationsHistory';
+
+import ResponsibleSection from "./ResponsibleSection";
+import AssignResponsibleDialog from "./AssingResponsibleDialog";
+import { useActivation } from "@/contexts/ActivationContext";
+import { Button } from "@mui/material";
+import CenterCatastroDetails from "./CenterCatastroDetails";
+import "./CenterCatastroDetails.css";
+import OperationalFunctions from '@/components/center/OperationalFunctions';
+import ActivationPanel from '@/components/center/ActivationPanel';
+import { useScrollToTop } from '@/hooks/useScrollToTop';
+
+type Resource = { item_id: string | number; name: string; category: string; quantity: number };
+type AssignRole = "trabajador municipal" | "contacto ciudadano";
+
+const getStatusText = (isActive: boolean) => (isActive ? "Activo" : "Inactivo");
+const getStatusClass = (isActive: boolean) => (isActive ? "status-active" : "status-inactive");
+const getOperationalStatusClass = (status: OperationalStatusUI | undefined) => {
+  switch (status) {
+    case "Abierto": return "operational-open";
+    case "Cerrado Temporalmente": return "operational-closed";
+    case "Capacidad Máxima": return "operational-full";
+    default: return "operational-unknown";
+  }
+};
+
+const CenterDetailsPage: React.FC = () => {
+  useScrollToTop({ behavior: 'smooth' });
+  const { centerId } = useParams<{ centerId: string }>();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { activation } = useActivation();
+
+  const [center, setCenter] = useState<CenterData | null>(null);
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [notifications, setNotifications] = useState<CenterNotification[]>([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isUpdatingOperationalStatus, setIsUpdatingOperationalStatus] = useState(false);
+
+  const [assignRole, setAssignRole] = useState<AssignRole | null>(null);
+  const [assignOpen, setAssignOpen] = useState(false);
+
+
+  const [notificationToast, setNotificationToast] = useState<{
+    show: boolean;
+    message: string;
+    type: 'success' | 'error';
+  }>({ show: false, message: '', type: 'success' });
+
+  const showNotificationToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setNotificationToast({ show: true, message, type });
+    setTimeout(() => {
+      setNotificationToast({ show: false, message: '', type: 'success' });
+    }, 4000);
+  };
+  // OMZ zone state
+  const [omzZone, setOmzZone] = useState<string | null>(null);
+
+  // Función para cargar las notificaciones
+  const fetchNotifications = useCallback(async () => {
+    if (!centerId) return;
+    
+    setLoadingNotifications(true);
+    try {
+      const data = await listNotificationsByCenter(centerId);
+      setNotifications(data);
+    } catch (error) {
+      console.error('Error al cargar notificaciones:', error);
+    } finally {
+      setLoadingNotifications(false);
+    }
+  }, [centerId]);
+
+  const handleSendTestNotification = async () => {
+    if (!center?.comunity_charge_id) {
+      alert('No hay encargado asignado a este centro');
+      return;
+    }
+
+    if (!center.center_id) {
+      alert('ID del centro no disponible');
+      return;
+    }
+
+    try {
+      await createNotification({
+        center_id: center.center_id,
+        title: '🔔 Notificación de prueba',
+        message: `Esta es una notificación de prueba enviada desde el centro "${center.name}". El sistema de notificaciones está funcionando correctamente.`,
+        destinatary_id: center.comunity_charge_id
+      });
+      
+      showNotificationToast('✅ Notificación de prueba enviada correctamente', 'success');
+      
+      // Recargar notificaciones después de 1 segundo
+      setTimeout(() => {
+        fetchNotifications();
+      }, 1000);
+    } catch (error: any) {
+      console.error('Error al enviar notificación:', error);
+      showNotificationToast('❌ Error al enviar la notificación', 'error');
+    }
+  };
+
+  const openAssign = (role: AssignRole) => { setAssignRole(role); setAssignOpen(true); };
+  const closeAssign = () => setAssignOpen(false);
+
+  // Función para recargar los datos del centro
+  const reloadCenterData = useCallback(async () => {
+    if (!centerId) return;
+    
+    try {
+      const centerData = await getOneCenter(centerId);
+      const mapped = {
+        ...(centerData as any),
+        operational_status: mapStatusToFrontend((centerData as any).operational_status),
+      } as Center & { public_note?: string; operational_status?: OperationalStatusUI };
+      
+      setCenter(mapped as CenterData);
+    } catch (error) {
+      console.error('Error recargando datos del centro:', error);
+    }
+  }, [centerId]);
+
+  const handleOperationalStatusChange = useCallback(
+  async (newStatus: OperationalStatusUI, publicNote?: string) => {
+    if (!center || isUpdatingOperationalStatus) return;
+    
+    if (!center.center_id) {
+      alert('ID del centro no disponible');
+      return;
+    }
+    
+    setIsUpdatingOperationalStatus(true);
+    try {
+      await updateOperationalStatus(center.center_id, newStatus, publicNote);
+      
+      // Recargar los datos del centro desde el servidor para asegurar consistencia
+      await reloadCenterData();
+      
+    } catch (err: any) {
+      console.error("Error updating operational status:", err);
+      alert(err?.response?.data?.message || err?.message || "No se pudo actualizar el estado operacional.");
+    } finally {
+      setIsUpdatingOperationalStatus(false);
+    }
+  },
+  [center, isUpdatingOperationalStatus, reloadCenterData]
+);
+
+  // Cargar datos del centro
+  useEffect(() => {
+    if (!centerId) return;
+    let alive = true;
+    
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const [c, inv] = await Promise.all([
+          getOneCenter(centerId),
+          listCenterInventory(centerId),
+        ]);
+        
+        if (!alive) return;
+        
+        const mapped = {
+          ...(c as any),
+          operational_status: mapStatusToFrontend((c as any).operational_status),
+        } as Center & { public_note?: string; operational_status?: OperationalStatusUI };
+
+        setCenter(mapped as CenterData);
+        setResources(inv);
+        // Obtener zona OMZ como string
+        const omz = await getOmzZoneForCenter(centerId);
+        setOmzZone(omz);
+        await fetchNotifications();
+      } catch (e: any) {
+        if (alive) {
+          setError(e?.response?.data?.message || e?.message || "No se pudieron cargar los detalles del centro.");
+        }
+      } finally {
+        if (alive) {
+          setLoading(false);
+        }
+      }
+    })();
+    
+    return () => { alive = false; };
+  }, [centerId]);
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
+
+  // Refrescar los datos del centro cada 30 segundos para mantener sincronizado el porcentaje de abastecimiento
+  useEffect(() => {
+    if (!centerId) return;
+    
+    const interval = setInterval(() => {
+      reloadCenterData();
+    }, 30000); // 30 segundos
+
+    return () => clearInterval(interval);
+  }, [centerId, reloadCenterData]);
+
+  //revisar si se ocupa esto
+  const groupedResources = useMemo(() => {
+    return resources.reduce((acc, r) => {
+      (acc[r.category] ||= []).push(r);
+      return acc;
+    }, {} as Record<string, Resource[]>);
+  }, [resources]);
+
+
+  if (loading) {
+    return <div className="center-details-page loading">Cargando detalles del centro...</div>;
+  }
+  if (error || !center) {
+    return (
+      <div className="center-details-page error">
+        <p>{error || "No se pudo cargar el centro."}</p>
+        <button onClick={() => navigate(-1)}>Volver</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="center-details-page">
+      {/* Toast de notificación */}
+      {notificationToast.show && (
+        <div 
+          className={`notification-toast ${notificationToast.type}`}
+          style={{
+            position: 'fixed',
+            top: '20px',
+            right: '20px',
+            background: notificationToast.type === 'success' ? '#10b981' : '#ef4444',
+            color: 'white',
+            padding: '16px 24px',
+            borderRadius: '8px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            zIndex: 9999,
+            animation: 'slideInRight 0.3s ease-out',
+            maxWidth: '400px',
+            fontWeight: 500
+          }}
+        >
+          {notificationToast.message}
+        </div>
+      )}
+
+    <div className="center-details-container">
+      <PageHeader
+        title={center.name}
+        subtitle={`Centro ${center.type} - ${center.address || 'Dirección no especificada'}`}
+        breadcrumbs={[
+          { label: 'Centros', path: '/admin/centers' },
+          { label: 'Detalles del Centro' }
+        ]}
+        actions={
+          <Button 
+            variant="primary" 
+            component={Link} 
+            to={`/admin/centers/${centerId}/edit`}
+          >
+            Editar Detalles
+          </Button>
+        }
+      />
+
+      <div className="center-details-content">
+        <div className="center-info-section">
+          <div className="center-basic-info">
+            <h2>{center.name}</h2>
+            <div className="info-grid">
+              <div className="info-item"><label>Dirección:</label><span>{center.address ?? "—"}</span></div>
+              <div className="info-item">
+                <label>Tipo:</label>
+                <span className={`type-badge ${String(center.type).toLowerCase()}`}>{center.type}</span>
+              </div>
+              <div className="info-item"><label>Capacidad:</label><span>{center.capacity ?? "—"} personas</span></div>
+              <div className="info-item">
+                <label>Estado Actual:</label>
+                <span className={`status-badge ${getStatusClass(center.is_active)}`}>{getStatusText(center.is_active)}</span>
+              </div>
+              <div className="info-item">
+                <label>Nivel de Abastecimiento:</label>
+                <span className="fullness-percentage">{(center.fullnessPercentage || 0).toFixed(1)}%</span>
+              </div>
+              <div className="info-item">
+                <label>Estado Operativo:</label>
+                <span className={`operational-status-badge ${getOperationalStatusClass(center.operational_status as OperationalStatusUI)}`}>
+                  {(center.operational_status as OperationalStatusUI) ?? "—"}
+                </span>
+              </div>
+              {mapStatusToFrontend(center.operational_status) === "Cerrado Temporalmente" && center.public_note && (
+                <div className="info-item">
+                  <label>Información adicional:</label>
+                  <div className="public-note-display">{center.public_note}</div>
+                </div>
+              )}
+              <div className="info-item">
+                <label>Zona OMZ:</label>
+                <span>{omzZone ? omzZone : "No asignada"}</span>
+              </div>
+            </div>
+
+            {(user?.role_name === "Encargado" || user?.role_name === "Trabajador Municipal" || user?.role_name === "Contacto Ciudadano") &&
+              center.operational_status && (
+                <OperationalStatusControl
+                  centerId={centerId!}
+                  currentStatus={(center.operational_status as OperationalStatusUI) ?? "Abierto"}
+                  currentNote={center.public_note ?? undefined}
+                  onStatusChange={handleOperationalStatusChange}
+                  isUpdating={isUpdatingOperationalStatus}
+                />
+              )}
+          </div>
+        </div>
+
+        {/* Catastro (mantiene tu componente y estilos) */}
+        {/* eslint-disable-next-line @typescript-eslint/ban-ts-comment */}
+        {/* @ts-ignore - backend trae props del catastro fuera de Center UI */}
+        <CenterCatastroDetails centerData={center as any} />
+
+        {/* Panel de Activación */}
+        <ActivationPanel 
+          centerId={centerId!}
+          isActive={center.is_active}
+        />
+            
+        {/* Sección de Funcionalidades Operativas */}
+        <OperationalFunctions 
+          centerId={centerId!}
+          isActive={center.is_active}
+          onRefresh={async () => {
+            // Recargar datos del centro cuando se actualice
+            try {
+              const c = await getOneCenter(centerId!);
+              setCenter({
+                ...(c as any),
+                operational_status: mapStatusToFrontend((c as any).operational_status),
+              });
+            } catch (error) {
+              console.error('Error recargando centro:', error);
+            }
+          }}
+        />
+        {/* Sección de Historial de Notificaciones */}
+        <div className="notifications-section" style={{ marginTop: '32px' }}>
+          <NotificationsHistory
+            notifications={notifications}
+            loading={loadingNotifications}
+            onRefresh={fetchNotifications}
+          />
+        </div>
+      </div>
+
+        <div className="responsible-section">
+          <h3>Responsable</h3>
+          <div className="responsible-info">
+            <ResponsibleSection
+              municipalId={center.municipal_manager_id}
+              comunityId={center.comunity_charge_id}
+              onAssignMunicipal={() => openAssign("trabajador municipal")}
+              onAssignCommunity={() => openAssign("contacto ciudadano")}
+            />
+            <AssignResponsibleDialog
+              open={assignOpen}
+              onClose={closeAssign}
+              centerId={centerId!}
+              role={assignRole}
+              onSuccess={async () => {
+                closeAssign();
+                try {
+                  const c = await getOneCenter(centerId!);
+                  setCenter({
+                    ...(c as any),
+                    operational_status: mapStatusToFrontend((c as any).operational_status),
+                  });
+                } catch {}
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default CenterDetailsPage;

@@ -1,0 +1,447 @@
+/* src/components/map/MapComponent.css */
+
+/* Contenedor principal - Los filtros ahora son flotantes */
+.map-container {
+  width: 100%;
+  height: calc(100vh - 60px);
+  position: relative;
+  /* Los filtros flotan sobre el mapa, no necesita flex-direction column */
+}
+
+.map-wrapper {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.error-message {
+  padding: 20px;
+  color: red;
+  text-align: center;
+}
+
+/* ========== ESTILOS PARA MARCADORES DE CENTROS ========== */
+
+/* Estilo base para el pin personalizado */
+.marker-pin {
+  background-color: white;
+  font-size: 1.5em; 
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+  border: 4px solid grey;
+  border-radius: 50%;
+  width: 42px;
+  height: 42px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  position: relative;
+}
+
+.marker-pin:hover {
+  transform: scale(1.2);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+
+/* Indicador para centros cercanos */
+.nearby-indicator {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: linear-gradient(45deg, #ffd700, #ffed4e);
+  color: #333;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8em;
+  font-weight: bold;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(255, 215, 0, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(255, 215, 0, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 215, 0, 0);
+  }
+}
+
+/* --- ESTILOS DE ESTADO PARA EL BORDE --- */
+.marker-pin.status-ok {
+  border-color: var(--color-success);
+}
+.marker-pin.status-warning {
+  border-color: var(--color-warning);
+}
+.marker-pin.status-critical {
+  border-color: var(--color-danger);
+}
+.marker-pin.status-inactive {
+  border-color: var(--color-neutral);
+  opacity: 0.6;
+  filter: grayscale(80%);
+}
+
+/* Nuevos estados operativos */
+.marker-pin.status-open {
+  border-color: var(--color-operational-open);
+}
+.marker-pin.status-temporarily-closed {
+  border-color: var(--color-operational-closed);
+  opacity: 0.7;
+}
+.marker-pin.status-full-capacity {
+  border-color: var(--color-operational-full);
+  background-color: var(--color-operational-full-bg);
+}
+
+/* Estilo especial para centros cercanos */
+.marker-pin.nearby-center {
+  border-width: 6px;
+  width: 48px;
+  height: 48px;
+  font-size: 1.7em;
+  box-shadow: 0 4px 15px rgba(255, 215, 0, 0.5);
+}
+
+.marker-pin.nearby-center:hover {
+  transform: scale(1.3);
+}
+
+/* ========== MARCADOR DE UBICACIÓN DEL USUARIO ========== */
+
+.user-location-marker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.user-location-dot {
+  background: white;
+  border: 3px solid #007bff;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2em;
+  z-index: 2;
+  position: relative;
+  box-shadow: 0 2px 10px rgba(0,123,255,0.3);
+}
+
+.user-location-pulse {
+  position: absolute;
+  border: 2px solid #007bff;
+  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+  animation: user-pulse 2s infinite;
+  opacity: 0.5;
+}
+
+@keyframes user-pulse {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
+}
+
+/* ========== VENTANA DE INFORMACIÓN ========== */
+
+.infowindow-content {
+  padding: 8px 12px;
+  text-align: left;
+  max-width: 280px;
+}
+
+.infowindow-content h4 {
+  margin: 0 0 8px 0;
+  color: #333;
+  font-size: 1.1em;
+}
+
+.infowindow-content p {
+  margin: 4px 0;
+  font-size: 0.9em;
+  color: #555;
+  line-height: 1.4;
+}
+
+/* Badge para centros cercanos */
+.nearby-badge {
+  background: linear-gradient(45deg, #ffd700, #ffed4e);
+  color: #333;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.8em;
+  font-weight: 600;
+  margin: 6px 0;
+  display: inline-block;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Estilo para la nota pública */
+.public-note {
+  background-color: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 4px;
+  padding: 8px;
+  margin: 8px 0;
+}
+.public-note p {
+  margin: 0;
+  color: #856404;
+  font-weight: 500;
+}
+
+.omz-toggle-btn {
+  position: absolute;
+  top: 80px; /* Ajusta la distancia desde el borde superior */
+  left: 20px; /* Ajusta la distancia desde el borde izquierdo */
+  z-index: 999; /* Asegura que el botón esté sobre otros elementos */
+  padding: 10px;
+}
+
+/* ========== RESPONSIVIDAD ========== */
+
+@media (max-width: 768px) {
+  .map-container {
+    height: calc(100vh - 50px);
+  }
+  
+  .marker-pin {
+    width: 36px;
+    height: 36px;
+    font-size: 1.3em;
+  }
+  
+  .marker-pin.nearby-center {
+    width: 42px;
+    height: 42px;
+    font-size: 1.5em;
+    border-width: 5px;
+  }
+  
+  .user-location-dot {
+    width: 32px;
+    height: 32px;
+    font-size: 1.1em;
+  }
+  
+  .user-location-pulse {
+    width: 50px;
+    height: 50px;
+  }
+  
+  .infowindow-content {
+    max-width: 240px;
+    padding: 6px 10px;
+  }
+  
+  .infowindow-content h4 {
+    font-size: 1em;
+  }
+  
+  .infowindow-content p {
+    font-size: 0.85em;
+  }
+}
+
+@media (max-width: 480px) {
+  .marker-pin {
+    width: 32px;
+    height: 32px;
+    font-size: 1.2em;
+    border-width: 3px;
+  }
+  
+  .marker-pin.nearby-center {
+    width: 36px;
+    height: 36px;
+    font-size: 1.3em;
+    border-width: 4px;
+  }
+  
+  .nearby-indicator {
+    width: 16px;
+    height: 16px;
+    font-size: 0.7em;
+    top: -6px;
+    right: -6px;
+  }
+  
+  .user-location-dot {
+    width: 28px;
+    height: 28px;
+    font-size: 1em;
+  }
+  
+  .infowindow-content {
+    max-width: 200px;
+  }
+}
+/* --- Estilo COMPACTO para el Botón "Ver Detalles" --- */
+
+.view-details-btn {
+    /* Diseño Base */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    
+    /* Colores y Fondo */
+    background-color: #007bff;
+    color: white;
+    
+    /* FORMA Y ESPACIADO COMPACTOS */
+    padding: 6px 12px; /* Reducido */
+    border: none;
+    border-radius: 16px; /* Ligeramente más compacta */
+    font-size: 12px; /* Reducido */
+    font-weight: 600; /* Menos negrita que 'bold' */
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.2px; /* Reducido */
+    
+    /* Sombra y Transiciones */
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.1); /* Sombra más suave */
+    transition: background-color 0.3s ease, transform 0.15s ease, box-shadow 0.3s ease;
+}
+
+/* Efectos al pasar el ratón */
+.view-details-btn:hover {
+    background-color: #0056b3;
+    transform: translateY(-0.5px); /* Movimiento más sutil */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.12);
+}
+
+/* Estilo para el Icono */
+.view-details-btn .icon-detail {
+    margin-left: 6px; /* Espacio reducido */
+    font-size: 14px; /* Reducido */
+    line-height: 1;
+}
+
+/* Efecto al hacer click */
+.view-details-btn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.sidepanel-info {
+  background-color: #f5f5f5;
+  padding: 15px;
+  border-radius: 8px;
+  margin-bottom: 15px;
+}
+
+.sidepanel-info p {
+  margin: 8px 0;
+  font-size: 14px;
+}
+.see-more-btn {
+  background-color: #1976d2;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.see-more-btn:hover {
+  background-color: #125aa0;
+}
+
+.priority-items-list {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+
+.priority-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  font-size: 0.95rem;
+}
+
+.priority-item:last-child {
+  border-bottom: none;
+}
+
+.item-name {
+  font-weight: 500;
+  color: #222;
+  flex: 1;
+  margin-right: 8px;
+  word-break: break-word;
+}
+
+.item-updated {
+  color: #666;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.category-header {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background-color: #f6f6f6;
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin: 6px 0;
+  transition: background-color 0.2s ease;
+}
+
+.category-header:hover {
+  background-color: #eaeaea;
+}
+
+.toggle-icon {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+.priority-items-list {
+  margin-top: 4px;
+  margin-left: 14px;
+  list-style-type: "• ";
+}
+
+.priority-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  padding: 6px 10px;
+  background-color: #f3f3f3;
+  border-radius: 6px;
+  margin: 8px 0;
+  transition: background-color 0.2s ease;
+}
+
+.priority-header:hover {
+  background-color: #e7e7e7;
+}

@@ -1,0 +1,11 @@
+/* src/App.css */
+.App {
+  width: 100%;
+  height: auto;
+}
+
+.content {
+  margin-top: 0px; 
+  width: 100%;
+  min-height: 100vh;
+}

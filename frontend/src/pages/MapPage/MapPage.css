@@ -1,0 +1,39 @@
+.map-page-container {
+  width: 100%;
+  height: calc(100vh); /* Ajusta según sea necesario, restando navbar y padding */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* El mapa no debe tener scroll, debe ocupar exactamente su espacio */
+}
+
+.map-page-container.error-message {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 1.2em;
+  color: #dc3545;
+  background-color: #f8d7da;
+  border: 1px solid #f5c6cb;
+  border-radius: 4px;
+  margin: 20px;
+  padding: 20px;
+}
+
+/* Responsividad */
+@media (max-width: 768px) {
+  .map-page-container {
+    height: calc(100vh - 64px);
+  }
+}
+
+@media (max-width: 480px) {
+  .map-page-container {
+    height: calc(100vh - 64px);
+  }
+}
+
+
+
+
+
+

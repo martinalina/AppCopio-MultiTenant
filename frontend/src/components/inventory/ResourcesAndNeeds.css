@@ -1,0 +1,337 @@
+/* src/components/inventory/ResourcesAndNeeds.css */
+
+.resources-and-needs {
+  margin: 20px 0;
+  padding: 0;
+}
+
+.resources-header {
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.resources-header h2 {
+  margin: 0 0 12px 0;
+  color: #333;
+  font-size: 1.8rem;
+  font-weight: 600;
+}
+
+.offline-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: #fff3cd;
+  color: #856404;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+  border: 1px solid #ffeaa7;
+}
+
+.offline-icon {
+  font-size: 1.1rem;
+}
+
+.capacity-info {
+  font-size: 1rem;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.capacity-info strong {
+  color: #333;
+  font-weight: 600;
+}
+
+.overall-fullness {
+  font-size: 1.1rem;
+  color: #333;
+  margin-top: 12px;
+  padding: 12px 16px;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+  border-left: 4px solid #2196f3;
+}
+
+.overall-fullness strong {
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.categories-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 20px;
+  margin-top: 24px;
+}
+
+.category-card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e0e0e0;
+  transition: box-shadow 0.2s ease;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+}
+
+.category-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.category-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.category-header h3 {
+  margin: 0;
+  color: #333;
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.coverage-badge {
+  background-color: #4caf50;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  min-width: 45px;
+  text-align: center;
+}
+
+.category-status {
+  margin-bottom: 16px;
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.quantity-summary {
+  margin-bottom: 16px;
+}
+
+.quantity-item {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding: 8px 0;
+}
+
+.quantity-item .label {
+  color: #666;
+  font-weight: 500;
+}
+
+.quantity-item .value {
+  font-weight: 600;
+}
+
+.quantity-item .value.current {
+  color: #4caf50;
+}
+
+.quantity-item .value.needed {
+  color: #ff9800;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background-color: #f5f5f5;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+  border-radius: 4px;
+}
+
+.items-breakdown h4 {
+  margin: 0 0 8px 0;
+  color: #333;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.items-breakdown {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.breakdown-note {
+  margin: 0 0 12px 0;
+  padding: 10px 12px;
+  background-color: #e3f2fd;
+  border-left: 3px solid #2196f3;
+  font-size: 0.85rem;
+  color: #1565c0;
+  line-height: 1.5;
+  border-radius: 4px;
+}
+
+.breakdown-note strong {
+  font-weight: 600;
+}
+
+.items-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
+.resources-and-needs .items-list .item-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  flex: none !important;
+  min-height: 30px !important;
+  max-height: none !important;
+  padding: 4px 0 !important;
+  border: none !important;
+  border-bottom: 1px solid #f0f0f0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  gap: 8px !important;
+  margin: 0 !important;
+  width: 100% !important;
+}
+
+.resources-and-needs .items-list .item-row:last-child {
+  border-bottom: none !important;
+}
+
+.resources-and-needs .items-list .item-info {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  flex: 1 !important;
+}
+
+.resources-and-needs .items-list .item-name {
+  font-size: 0.9rem !important;
+  color: #333 !important;
+  font-weight: 500 !important;
+}
+
+.resources-and-needs .items-list .priority-indicator {
+  width: 8px !important;
+  height: 8px !important;
+  border-radius: 50% !important;
+  flex-shrink: 0 !important;
+}
+
+.resources-and-needs .items-list .item-quantities {
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  font-size: 0.9rem !important;
+  margin: 0 12px !important;
+}
+
+.resources-and-needs .items-list .item-quantities .current {
+  color: #4caf50 !important;
+  font-weight: 600 !important;
+}
+
+.resources-and-needs .items-list .item-quantities .separator {
+  color: #999 !important;
+}
+
+.resources-and-needs .items-list .item-quantities .needed {
+  color: #ff9800 !important;
+  font-weight: 600 !important;
+}
+
+.resources-and-needs .items-list .item-quantities .unit {
+  color: #666 !important;
+  font-size: 0.8rem !important;
+  margin-left: 4px !important;
+}
+
+.resources-and-needs .items-list .item-coverage {
+  min-width: 60px !important;
+  text-align: right !important;
+}
+
+.coverage-hint {
+  font-size: 0.8rem;
+  color: #757575;
+  font-style: italic;
+  cursor: help;
+}
+
+.coverage-text {
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.coverage-text.sufficient {
+  color: #4caf50;
+  background-color: #e8f5e8;
+}
+
+.coverage-text.insufficient {
+  color: #f44336;
+  background-color: #fde8e8;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: #666;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.empty-state p {
+  margin: 0 0 12px 0;
+  font-size: 1.1rem;
+}
+
+.empty-state p:last-child {
+  font-size: 1rem;
+  color: #999;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .categories-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  
+  .category-card {
+    padding: 16px;
+    min-height: 160px;
+  }
+  
+  .resources-and-needs .items-list .item-row {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 6px !important;
+    padding: 6px 0 !important;
+  }
+  
+  .resources-and-needs .items-list .item-quantities,
+  .resources-and-needs .items-list .item-coverage {
+    margin: 0 !important;
+  }
+}
