@@ -17,6 +17,11 @@ export function ActivationProvider({ centerId, children }: { centerId?: string |
   const load = async (signal?: AbortSignal) => {
     setLoading(true);
     try {
+      if (!centerId) { 
+        setLoading(false);
+        console.log('No hay centerID')
+        return; 
+      }
       const act = await getActiveActivation(String(centerId), { signal });
       setActivation(act);
     } finally {

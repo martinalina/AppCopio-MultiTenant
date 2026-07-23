@@ -2,7 +2,6 @@ import * as React from "react";
 import { Outlet } from "react-router-dom";
 import { Box, LinearProgress } from "@mui/material";
 import VerticalNavbar, { DRAWER_WIDTH, DRAWER_WIDTH_COLLAPSED, APP_BAR_HEIGHT } from "@/components/layout/navbar/Navbar";
-import { OfflineNotificationContainer, useAutoNotifications } from "@/offline/OfflineNotifications";
 
 function PageFallback() {
   return (
@@ -13,8 +12,6 @@ function PageFallback() {
 }
 
 function MainLayoutContent() {
-  // Hook que escucha eventos offline y muestra notificaciones
-  useAutoNotifications();
 
   return (
     <Box sx={{ display: "flex", minHeight: "100vh" }}>
@@ -45,9 +42,6 @@ function MainLayoutContent() {
           <Outlet />
         </React.Suspense>
       </Box>
-
-      {/* Contenedor de notificaciones offline */}
-      <OfflineNotificationContainer />
     </Box>
   );
 }

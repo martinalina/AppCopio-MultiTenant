@@ -45,7 +45,6 @@ import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { useAuth } from "@/contexts/AuthContext";
 import { isAdminOrSupport, isFieldUser, isMunicipalWorker } from "@/utils/authz";
 import { paths } from "@/routes/paths";
-import { OfflineIndicator } from "@/offline/components/OfflineIndicator";
 import { useUnreadNotifications } from "@/hooks/useUnreadNotifications";
 
 const DRAWER_WIDTH = 240;
@@ -258,11 +257,6 @@ export default function VerticalNavbar() {
 
       <Divider sx={{ backgroundColor: "rgba(255, 255, 255, 0.12)" }} />
 
-      {/* Indicador Offline */}
-      <Box sx={{ px: 2, py: 1 }}>
-        <OfflineIndicator variant="chip" showWhenOnline={false} />
-      </Box>
-
       {/* Navigation Items */}
       <List>
         <NavItem to={paths.home} icon={<HomeIcon />} label="Inicio" isCollapsed={isCollapsed} onClick={handleNavItemClick} />
@@ -277,9 +271,9 @@ export default function VerticalNavbar() {
           onClick={handleNavItemClick}
         />*/}
 
-        {/* P]Ara los usuarios registrados */}
+        {/* Para los usuarios registrados */}
         {isFieldUser(user) && (
-          <ListItem disablePadding sx={{ display: "block" }}>
+          <>
             <NavItem to={paths.myCenters} icon={<WorkIcon />} label="Mis Centros" isCollapsed={isCollapsed} onClick={handleNavItemClick} />
               <NavItem
                 to={paths.notifications}
@@ -290,7 +284,7 @@ export default function VerticalNavbar() {
                 onClick={handleNavItemClick}
               />
               <NavItem to={paths.myShifts} icon={<WorkIcon />} label="Mis Turnos" isCollapsed={isCollapsed} onClick={handleNavItemClick} />
-          </ListItem>
+          </>
           
           
           
@@ -298,7 +292,7 @@ export default function VerticalNavbar() {
         {/* Admin Menu (Agrupado) */}
         {isAdminOrSupport(user) && (
           <>
-            <ListItem disablePadding sx={{ display: "block" }}>
+            <>
               <NavItem to={paths.myCenters} icon={<WorkIcon />} label="Mis Centros" isCollapsed={isCollapsed} onClick={handleNavItemClick} />
               <NavItem
                 to={paths.notifications}
@@ -345,7 +339,7 @@ export default function VerticalNavbar() {
                 </ListItemButton>
               </Tooltip>
               
-            </ListItem>
+            </>
 
             <Collapse in={adminMenuOpen && !isCollapsed} timeout="auto" unmountOnExit>
               <List component="div" disablePadding>

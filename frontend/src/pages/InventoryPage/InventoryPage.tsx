@@ -2,7 +2,6 @@ import * as React from "react";
 import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
-import { useOffline } from "@/offline/OfflineContext";
 import {
   listCenterInventory,
   createInventoryItem,
@@ -40,7 +39,6 @@ export default function InventoryPage() {
   useScrollToTop({ behavior: 'smooth' });
   const { centerId } = useParams<{ centerId: string }>();
   const { user } = useAuth();
-  const { isOnline, lastSync } = useOffline();
 
   // Estado
   const [inventory, setInventory] = useState<GroupedInventory>({});
@@ -209,7 +207,7 @@ useEffect(() => {
   };
   // Callback para actualizar el fullnessPercentage del centro
   const handleFullnessCalculated = useCallback(async (fullnessPercentage: number) => {
-    if (!centerId || !isOnline) return;
+    if (!centerId) return;
     
     try {
       await updateCenterFullness(centerId, fullnessPercentage);
@@ -218,7 +216,7 @@ useEffect(() => {
       console.error("Error al actualizar fullness del centro:", error);
       // No mostramos error al usuario ya que es una actualización en segundo plano
     }
-  }, [centerId, isOnline]);
+  }, [centerId]);
 
   // Ordenar por fecha
   const handleSortByDate = (order: string) => {
@@ -398,8 +396,6 @@ useEffect(() => {
         <ResourcesAndNeeds
           inventory={inventory}
           centerCapacity={centerCapacity}
-          isOffline={!isOnline}
-          lastSyncTime={lastSync ? new Date(lastSync).toLocaleString() : ''}
           onFullnessCalculated={handleFullnessCalculated}
         />
       )}

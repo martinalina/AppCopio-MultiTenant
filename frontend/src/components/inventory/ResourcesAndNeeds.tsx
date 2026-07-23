@@ -6,8 +6,6 @@ import './ResourcesAndNeeds.css';
 interface ResourcesAndNeedsProps {
   inventory: { [category: string]: InventoryItem[] };
   centerCapacity: number; // Número actual de personas en el centro
-  isOffline?: boolean;
-  lastSyncTime?: string;
   onFullnessCalculated?: (fullnessPercentage: number) => void; // Callback para enviar el porcentaje calculado
 }
 
@@ -23,8 +21,6 @@ interface CategorySummary {
 const ResourcesAndNeeds: React.FC<ResourcesAndNeedsProps> = ({
   inventory,
   centerCapacity,
-  isOffline = false,
-  lastSyncTime,
   onFullnessCalculated
 }) => {
   // Calcular resumen por categoría
@@ -68,10 +64,10 @@ const ResourcesAndNeeds: React.FC<ResourcesAndNeedsProps> = ({
 
   // Notificar el cambio del fullness al componente padre
   React.useEffect(() => {
-    if (onFullnessCalculated && !isOffline) {
+    if (onFullnessCalculated) {
       onFullnessCalculated(averageFullness);
     }
-  }, [averageFullness, onFullnessCalculated, isOffline]);
+  }, [averageFullness, onFullnessCalculated]);
 
   const getCoverageStatus = (percentage: number): { text: string; color: string } => {
     if (percentage >= 80) return { text: 'Bien abastecido', color: '#4caf50' };
@@ -84,12 +80,6 @@ const ResourcesAndNeeds: React.FC<ResourcesAndNeedsProps> = ({
     <div className="resources-and-needs">
       <div className="resources-header">
         <h2>Recursos Disponibles y Necesidades</h2>
-        {isOffline && (
-          <div className="offline-indicator">
-            <span className="offline-icon">📶</span>
-            Sin conexión - Última sincronización: {lastSyncTime || 'Desconocida'}
-          </div>
-        )}
         <div className="capacity-info">
           <span>Personas actuales en el centro: <strong>{centerCapacity} personas</strong></span>
         </div>

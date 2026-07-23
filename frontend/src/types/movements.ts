@@ -2,19 +2,6 @@
 export type MovementType = "ENTRY" | "EXIT" | "ADJUSTMENT";
 export type SyncStatus = "SYNCED" | "PENDING" | "ERROR";
 
-// Interfaz para movimientos de inventario (entradas y salidas)
-export interface InventoryMovement {
-  movement_id: number;
-  center_id: string;
-  movement_type: MovementType;
-  created_at: string; // ISO timestamp
-  created_by_user_id: number;
-  created_by_user_name: string;
-  reason: string;
-  notes?: string;
-  sync_status?: SyncStatus;
-}
-
 // Interfaz para los ítems dentro de un movimiento
 export interface MovementItem {
   movement_item_id: number;
@@ -130,22 +117,4 @@ export interface StockValidation {
     requested: number;
     available: number;
   }[];
-}
-
-// Interfaz para operaciones offline pendientes
-export interface PendingOperation {
-  id: string; // UUID generado localmente
-  type: "ENTRY" | "EXIT" | "ADJUSTMENT";
-  center_id: string;
-  timestamp: string; // cuando se creó localmente
-  data: EntryMovementCreateDTO | ExitMovementCreateDTO; // datos de la operación
-  attempts: number; // intentos de sincronización
-  last_error?: string;
-}
-
-// Interfaz para el estado offline del inventario
-export interface OfflineInventoryState {
-  last_sync: string;
-  pending_operations: PendingOperation[];
-  cached_inventory: { [item_id: number]: number }; // cache del stock para validaciones offline
 }

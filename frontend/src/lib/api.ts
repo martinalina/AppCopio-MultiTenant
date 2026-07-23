@@ -1,5 +1,4 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
-import { setupOfflineInterceptor } from '@/offline/interceptor';
 
 const base = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
@@ -138,11 +137,6 @@ function handleLogout() {
     window.location.href = '/login?session_expired=true';
   }
 }
-
-// =====================================================
-// SETUP OFFLINE INTERCEPTOR (FASE 2)
-// =====================================================
-setupOfflineInterceptor(api);
 
 // Cliente sin interceptores offline (para sync y testing)
 export const apiNoRetry = axios.create({
