@@ -2,8 +2,40 @@
 -- PASO 3: INSERCIÓN DE DATOS DE PRUEBA COMPLETOS
 -- ==========================================================
 
--- Roles base
-INSERT INTO Roles (role_name) VALUES ('Administrador'), ('Trabajador Municipal'), ('Contacto Ciudadano');
+-- Roles base.
+-- Ids EXPLÍCITOS: el rol 4 (Super Administrador) ya se insertó en 002a, así que si
+-- estos tres dependieran del SERIAL quedarían como 5/6/7 y todos los role_id = 1/2/3
+-- de más abajo violarían la FK. El setval va al final del archivo.
+INSERT INTO Roles (role_id, role_name) VALUES
+(1, 'Administrador'),
+(2, 'Trabajador Municipal'),
+(3, 'Contacto Ciudadano');
+
+-- ==========================================================
+-- MUNICIPALIDADES
+-- Ids explícitos para que el resto del seed sea determinista.
+-- Todo el contenido histórico de este archivo pertenece a Valparaíso (id 1).
+-- ==========================================================
+INSERT INTO Municipalities (municipality_id, name, shortname) VALUES
+(1, 'Valparaíso',   'VALPO'),
+(2, 'Viña del Mar', 'VINA'),
+(3, 'Quilpué',      'QUILP'),
+(4, 'Concón',       'CONCO');
+SELECT setval('municipalities_municipality_id_seq', (SELECT MAX(municipality_id) FROM Municipalities));
+
+-- ==========================================================
+-- DEFAULT TEMPORAL DE SEMBRADO
+-- El bloque histórico de abajo (usuarios, inventarios, activaciones, personas y
+-- familias de Valparaíso) no trae municipality_id en sus listas de columnas.
+-- En vez de editar ~150 tuplas a mano, se fija un default de sembrado y se ELIMINA
+-- al final del archivo. La app nunca debe depender de estos defaults: el
+-- municipality_id siempre viene del JWT o de la entidad padre.
+-- ==========================================================
+ALTER TABLE Users                ALTER COLUMN municipality_id SET DEFAULT 1;
+ALTER TABLE CentersActivations   ALTER COLUMN municipality_id SET DEFAULT 1;
+ALTER TABLE Persons              ALTER COLUMN municipality_id SET DEFAULT 1;
+ALTER TABLE FamilyGroups         ALTER COLUMN municipality_id SET DEFAULT 1;
+ALTER TABLE CenterInventoryItems ALTER COLUMN municipality_id SET DEFAULT 1;
 
 -- Usuarios de prueba (contraseña para todos: '12345')
 INSERT INTO Users (username, password_hash, email, role_id, nombre, rut, is_active, es_apoyo_admin)
@@ -28,19 +60,35 @@ VALUES
 ('carolina.jeldes', '$2b$10$Psi3QNyicQITWPeGLOVXr.eqO9E72SBodzpSgJ42Z8EGgJZIYYR4m',  'carolina.jeldes@daemvalpo.cl', 3, 'Carolina Jeldes', '19.876.543-2', '987650006', TRUE, FALSE), -- Escuela Básica Los Placeres
 ('ivan.veliz', '$2b$10$Psi3QNyicQITWPeGLOVXr.eqO9E72SBodzpSgJ42Z8EGgJZIYYR4m','ivan.veliz@deportes.cl', 3, 'Iván Véliz', '20.123.456-8', '987650007', TRUE, FALSE); -- Centro Deportivo Rodelillo
 
-INSERT INTO Centers (name, address, type, capacity, latitude, longitude) VALUES
-('Gimnasio Municipal de Valparaíso', 'Av. Argentina 123', 'albergue', 150, -33.0458, -71.6197),
-('Liceo Bicentenario', 'Independencia 456', 'albergue comunitario', 80, -33.0465, -71.6212),
-('Sede Vecinal Cerro Alegre', 'Lautaro Rosas 789', 'albergue comunitario', 50, -33.0401, -71.6285),
-('Escuela República de Uruguay', 'Av. Uruguay 321', 'albergue', 120, -33.0475, -71.6143),
-('Sede Vecinal Cerro Cordillera', 'Calle Castillo 210, Cerro Cordillera', 'albergue comunitario', 70, -33.0448, -71.6259),
-('Escuela Básica Cerro Las Cañas', 'Av. Alemania 3950, Cerro Las Cañas', 'albergue', 100, -33.0469, -71.5955),
-('Centro Comunitario El Litre', 'San Juan de Dios 950, El Litre', 'albergue comunitario', 80, -33.0462, -71.6135),
-('Sede Vecinal Cerro Polanco', 'Calle Polanco 120, Cerro Polanco', 'albergue', 90, -33.0477, -71.6032), 
-('Centro Cultural Playa Ancha', 'Av. Gran Bretaña 1200', 'albergue', 110, -33.0335, -71.6460),
-('Sede Juntas de Vecinos Cerro Barón', 'Av. Matta 850', 'albergue comunitario', 60, -33.0400, -71.6000),
-('Escuela Básica Los Placeres', 'Av. Los Placeres 200', 'albergue', 20, -33.0450, -71.5740),
-('Centro Deportivo Rodelillo', 'Av. Rodelillo 1500', 'albergue comunitario', 70, -33.0640, -71.5680);
+-- Super Administrador: sin comuna (lo exige users_municipality_role_chk).
+-- Solo crea municipalidades y su primer administrador; el resto lo ve, no lo modifica.
+-- Va DESPUÉS de los usuarios de prueba a propósito: el resto del archivo referencia
+-- user_id 1..17 a mano (updated_by, requested_by, activated_by, changed_by), así que
+-- insertarlo antes correría todos esos ids en uno.
+INSERT INTO Users (username, password_hash, email, role_id, nombre, rut, is_active, es_apoyo_admin, municipality_id)
+VALUES ('superadmin', '$2b$10$Psi3QNyicQITWPeGLOVXr.eqO9E72SBodzpSgJ42Z8EGgJZIYYR4m', 'superadmin@appcopio.cl', 4, 'Super Administrador', '10.000.000-0', TRUE, FALSE, NULL);
+
+-- Centros de Valparaíso, con center_id EXPLÍCITO.
+-- El trigger trg_generate_center_id respeta un center_id que venga en el INSERT
+-- (`IF NEW.center_id IS NOT NULL THEN RETURN NEW`), así que sembrar los ids a mano
+-- mantiene el archivo determinista y deja intactas las ~158 referencias de más abajo.
+-- El contador de la comuna se sincroniza justo después.
+INSERT INTO Centers (center_id, municipality_id, name, address, type, capacity, latitude, longitude) VALUES
+('VALPO-C001', 1, 'Gimnasio Municipal de Valparaíso', 'Av. Argentina 123', 'albergue', 150, -33.0458, -71.6197),
+('VALPO-C002', 1, 'Liceo Bicentenario', 'Independencia 456', 'albergue comunitario', 80, -33.0465, -71.6212),
+('VALPO-C003', 1, 'Sede Vecinal Cerro Alegre', 'Lautaro Rosas 789', 'albergue comunitario', 50, -33.0401, -71.6285),
+('VALPO-C004', 1, 'Escuela República de Uruguay', 'Av. Uruguay 321', 'albergue', 120, -33.0475, -71.6143),
+('VALPO-C005', 1, 'Sede Vecinal Cerro Cordillera', 'Calle Castillo 210, Cerro Cordillera', 'albergue comunitario', 70, -33.0448, -71.6259),
+('VALPO-C006', 1, 'Escuela Básica Cerro Las Cañas', 'Av. Alemania 3950, Cerro Las Cañas', 'albergue', 100, -33.0469, -71.5955),
+('VALPO-C007', 1, 'Centro Comunitario El Litre', 'San Juan de Dios 950, El Litre', 'albergue comunitario', 80, -33.0462, -71.6135),
+('VALPO-C008', 1, 'Sede Vecinal Cerro Polanco', 'Calle Polanco 120, Cerro Polanco', 'albergue', 90, -33.0477, -71.6032),
+('VALPO-C009', 1, 'Centro Cultural Playa Ancha', 'Av. Gran Bretaña 1200', 'albergue', 110, -33.0335, -71.6460),
+('VALPO-C010', 1, 'Sede Juntas de Vecinos Cerro Barón', 'Av. Matta 850', 'albergue comunitario', 60, -33.0400, -71.6000),
+('VALPO-C011', 1, 'Escuela Básica Los Placeres', 'Av. Los Placeres 200', 'albergue', 20, -33.0450, -71.5740),
+('VALPO-C012', 1, 'Centro Deportivo Rodelillo', 'Av. Rodelillo 1500', 'albergue comunitario', 70, -33.0640, -71.5680);
+
+-- El próximo centro que cree un admin de Valparaíso debe ser VALPO-C013.
+UPDATE Municipalities SET center_seq_counter = 12 WHERE municipality_id = 1;
 
 -- Centers Descriptions
 INSERT INTO CentersDescription (
@@ -78,7 +126,7 @@ INSERT INTO CentersDescription (
     existen_generadores,
     existen_luces_emergencias
 ) VALUES (
-    'C001',
+    'VALPO-C001',
     'Municipalidad de Valparaíso',
     'Juan Herrera',
     'Encargado de Operaciones',
@@ -136,7 +184,7 @@ INSERT INTO CentersDescription (
     sistema_evacuacion_definido,
     existen_luces_emergencias
 ) VALUES (
-    'C002',
+    'VALPO-C002',
     'Liceo Bicentenario Valparaíso',
     '912345678',
     'Edificio público',
@@ -182,7 +230,7 @@ INSERT INTO CentersDescription (
     existe_lugar_animales_fuera,
     observaciones_dimension_animal
 ) VALUES (
-    'C003',
+    'VALPO-C003',
     'Junta de Vecinos Cerro Alegre',
     'Ana Beltrán',
     'Sede social',
@@ -231,7 +279,7 @@ INSERT INTO CentersDescription (
     existen_rampas,
     existen_luces_emergencias
 ) VALUES (
-    'C004',
+    'VALPO-C004',
     'Escuela República de Uruguay',
     '998765432',
     'Escuela',
@@ -514,128 +562,128 @@ VALUES
 -- Inventario de prueba - todos los centros con stock (ninguno en 0%)
 -- Centro C001
 INSERT INTO CenterInventoryItems (center_id, item_id, quantity, updated_by) VALUES
-('C001', 1, 280, 1),
-('C001', 2, 70, 1),
-('C001', 3, 40, 1),
-('C001', 4, 60, 1),
-('C001', 5, 15, 1),
-('C001', 6, 25, 1),
-('C001', 7, 50, 1),
-('C001', 8, 70, 1),
-('C001', 9, 105, 1),
-('C001', 10, 140, 1),
-('C001', 11, 35, 1),
-('C001', 12, 50, 1),
-('C001', 13, 100, 1),
-('C001', 14, 90, 1),
-('C001', 15, 35, 1),
-('C001', 16, 70, 1),
-('C001', 17, 18, 1),
-('C001', 18, 30, 1),
-('C001', 19, 30, 1),
-('C001', 20, 20, 1),
-('C001', 21, 40, 1),
-('C001', 22, 40, 1);
+('VALPO-C001', 1, 280, 1),
+('VALPO-C001', 2, 70, 1),
+('VALPO-C001', 3, 40, 1),
+('VALPO-C001', 4, 60, 1),
+('VALPO-C001', 5, 15, 1),
+('VALPO-C001', 6, 25, 1),
+('VALPO-C001', 7, 50, 1),
+('VALPO-C001', 8, 70, 1),
+('VALPO-C001', 9, 105, 1),
+('VALPO-C001', 10, 140, 1),
+('VALPO-C001', 11, 35, 1),
+('VALPO-C001', 12, 50, 1),
+('VALPO-C001', 13, 100, 1),
+('VALPO-C001', 14, 90, 1),
+('VALPO-C001', 15, 35, 1),
+('VALPO-C001', 16, 70, 1),
+('VALPO-C001', 17, 18, 1),
+('VALPO-C001', 18, 30, 1),
+('VALPO-C001', 19, 30, 1),
+('VALPO-C001', 20, 20, 1),
+('VALPO-C001', 21, 40, 1),
+('VALPO-C001', 22, 40, 1);
 
 -- Centro C002
 INSERT INTO CenterInventoryItems (center_id, item_id, quantity, updated_by) VALUES
-('C002', 1, 200, 2),
-('C002', 2, 50, 2),
-('C002', 3, 28, 2),
-('C002', 4, 45, 2),
-('C002', 5, 10, 2),
-('C002', 6, 18, 2),
-('C002', 7, 35, 2),
-('C002', 8, 50, 2),
-('C002', 9, 75, 2),
-('C002', 10, 100, 2),
-('C002', 11, 25, 2),
-('C002', 12, 35, 2),
-('C002', 13, 70, 2),
-('C002', 14, 60, 2),
-('C002', 15, 25, 2),
-('C002', 16, 50, 2),
-('C002', 17, 12, 2),
-('C002', 18, 22, 2),
-('C002', 19, 20, 2),
-('C002', 20, 15, 2),
-('C002', 21, 28, 2),
-('C002', 22, 28, 2);
+('VALPO-C002', 1, 200, 2),
+('VALPO-C002', 2, 50, 2),
+('VALPO-C002', 3, 28, 2),
+('VALPO-C002', 4, 45, 2),
+('VALPO-C002', 5, 10, 2),
+('VALPO-C002', 6, 18, 2),
+('VALPO-C002', 7, 35, 2),
+('VALPO-C002', 8, 50, 2),
+('VALPO-C002', 9, 75, 2),
+('VALPO-C002', 10, 100, 2),
+('VALPO-C002', 11, 25, 2),
+('VALPO-C002', 12, 35, 2),
+('VALPO-C002', 13, 70, 2),
+('VALPO-C002', 14, 60, 2),
+('VALPO-C002', 15, 25, 2),
+('VALPO-C002', 16, 50, 2),
+('VALPO-C002', 17, 12, 2),
+('VALPO-C002', 18, 22, 2),
+('VALPO-C002', 19, 20, 2),
+('VALPO-C002', 20, 15, 2),
+('VALPO-C002', 21, 28, 2),
+('VALPO-C002', 22, 28, 2);
 
 -- Centro C003
 INSERT INTO CenterInventoryItems (center_id, item_id, quantity, updated_by) VALUES
-('C003', 1, 320, 4),
-('C003', 2, 80, 4),
-('C003', 3, 45, 4),
-('C003', 4, 70, 4),
-('C003', 5, 18, 4),
-('C003', 6, 30, 4),
-('C003', 7, 60, 4),
-('C003', 8, 80, 4),
-('C003', 9, 120, 4),
-('C003', 10, 160, 4),
-('C003', 11, 40, 4),
-('C003', 12, 60, 4),
-('C003', 13, 120, 4),
-('C003', 14, 100, 4),
-('C003', 15, 40, 4),
-('C003', 16, 80, 4),
-('C003', 17, 20, 4),
-('C003', 18, 35, 4),
-('C003', 19, 40, 4),
-('C003', 20, 25, 4),
-('C003', 21, 45, 4),
-('C003', 22, 45, 4);
+('VALPO-C003', 1, 320, 4),
+('VALPO-C003', 2, 80, 4),
+('VALPO-C003', 3, 45, 4),
+('VALPO-C003', 4, 70, 4),
+('VALPO-C003', 5, 18, 4),
+('VALPO-C003', 6, 30, 4),
+('VALPO-C003', 7, 60, 4),
+('VALPO-C003', 8, 80, 4),
+('VALPO-C003', 9, 120, 4),
+('VALPO-C003', 10, 160, 4),
+('VALPO-C003', 11, 40, 4),
+('VALPO-C003', 12, 60, 4),
+('VALPO-C003', 13, 120, 4),
+('VALPO-C003', 14, 100, 4),
+('VALPO-C003', 15, 40, 4),
+('VALPO-C003', 16, 80, 4),
+('VALPO-C003', 17, 20, 4),
+('VALPO-C003', 18, 35, 4),
+('VALPO-C003', 19, 40, 4),
+('VALPO-C003', 20, 25, 4),
+('VALPO-C003', 21, 45, 4),
+('VALPO-C003', 22, 45, 4);
 
 -- Centro C004
 INSERT INTO CenterInventoryItems (center_id, item_id, quantity, updated_by) VALUES
-('C004', 1, 160, 5),
-('C004', 2, 40, 5),
-('C004', 3, 22, 5),
-('C004', 4, 35, 5),
-('C004', 5, 8, 5),
-('C004', 6, 15, 5),
-('C004', 7, 28, 5),
-('C004', 8, 40, 5),
-('C004', 9, 60, 5),
-('C004', 10, 80, 5),
-('C004', 11, 20, 5),
-('C004', 12, 28, 5),
-('C004', 13, 55, 5),
-('C004', 14, 50, 5),
-('C004', 15, 20, 5),
-('C004', 16, 40, 5),
-('C004', 17, 10, 5),
-('C004', 18, 18, 5),
-('C004', 19, 18, 5),
-('C004', 20, 12, 5),
-('C004', 21, 22, 5),
-('C004', 22, 22, 5);
+('VALPO-C004', 1, 160, 5),
+('VALPO-C004', 2, 40, 5),
+('VALPO-C004', 3, 22, 5),
+('VALPO-C004', 4, 35, 5),
+('VALPO-C004', 5, 8, 5),
+('VALPO-C004', 6, 15, 5),
+('VALPO-C004', 7, 28, 5),
+('VALPO-C004', 8, 40, 5),
+('VALPO-C004', 9, 60, 5),
+('VALPO-C004', 10, 80, 5),
+('VALPO-C004', 11, 20, 5),
+('VALPO-C004', 12, 28, 5),
+('VALPO-C004', 13, 55, 5),
+('VALPO-C004', 14, 50, 5),
+('VALPO-C004', 15, 20, 5),
+('VALPO-C004', 16, 40, 5),
+('VALPO-C004', 17, 10, 5),
+('VALPO-C004', 18, 18, 5),
+('VALPO-C004', 19, 18, 5),
+('VALPO-C004', 20, 12, 5),
+('VALPO-C004', 21, 22, 5),
+('VALPO-C004', 22, 22, 5);
 
 -- Centro C005
 INSERT INTO CenterInventoryItems (center_id, item_id, quantity, updated_by) VALUES
-('C005', 1, 400, 6),
-('C005', 2, 100, 6),
-('C005', 3, 55, 6),
-('C005', 4, 85, 6),
-('C005', 5, 22, 6),
-('C005', 6, 35, 6),
-('C005', 7, 70, 6),
-('C005', 8, 100, 6),
-('C005', 9, 150, 6),
-('C005', 10, 200, 6),
-('C005', 11, 50, 6),
-('C005', 12, 75, 6),
-('C005', 13, 150, 6),
-('C005', 14, 120, 6),
-('C005', 15, 50, 6),
-('C005', 16, 100, 6),
-('C005', 17, 25, 6),
-('C005', 18, 40, 6),
-('C005', 19, 50, 6),
-('C005', 20, 30, 6),
-('C005', 21, 55, 6),
-('C005', 22, 55, 6);
+('VALPO-C005', 1, 400, 6),
+('VALPO-C005', 2, 100, 6),
+('VALPO-C005', 3, 55, 6),
+('VALPO-C005', 4, 85, 6),
+('VALPO-C005', 5, 22, 6),
+('VALPO-C005', 6, 35, 6),
+('VALPO-C005', 7, 70, 6),
+('VALPO-C005', 8, 100, 6),
+('VALPO-C005', 9, 150, 6),
+('VALPO-C005', 10, 200, 6),
+('VALPO-C005', 11, 50, 6),
+('VALPO-C005', 12, 75, 6),
+('VALPO-C005', 13, 150, 6),
+('VALPO-C005', 14, 120, 6),
+('VALPO-C005', 15, 50, 6),
+('VALPO-C005', 16, 100, 6),
+('VALPO-C005', 17, 25, 6),
+('VALPO-C005', 18, 40, 6),
+('VALPO-C005', 19, 50, 6),
+('VALPO-C005', 20, 30, 6),
+('VALPO-C005', 21, 55, 6),
+('VALPO-C005', 22, 55, 6);
 
 -- Log de inventario correspondiente al stock inicial
 INSERT INTO InventoryLog (center_id, item_id, action_type, quantity, reason, created_by)
@@ -645,16 +693,16 @@ FROM CenterInventoryItems;
 -- Asignaciones de prueba
 INSERT INTO CenterAssignments (user_id, center_id, role, changed_by) 
 VALUES 
-(2, 'C001', 'trabajador municipal', 1), 
-(3, 'C001', 'contacto ciudadano', 1),
-(4, 'C002', 'trabajador municipal', 1), 
-(7, 'C002', 'contacto ciudadano', 1),
-(5, 'C003', 'trabajador municipal', 1),
-(8, 'C003', 'contacto ciudadano', 1),
-(6, 'C004', 'trabajador municipal', 1),
-(9, 'C004', 'contacto ciudadano', 1),
-(2, 'C005', 'trabajador municipal', 1),
-(10, 'C005', 'contacto ciudadano', 1);
+(2, 'VALPO-C001', 'trabajador municipal', 1), 
+(3, 'VALPO-C001', 'contacto ciudadano', 1),
+(4, 'VALPO-C002', 'trabajador municipal', 1), 
+(7, 'VALPO-C002', 'contacto ciudadano', 1),
+(5, 'VALPO-C003', 'trabajador municipal', 1),
+(8, 'VALPO-C003', 'contacto ciudadano', 1),
+(6, 'VALPO-C004', 'trabajador municipal', 1),
+(9, 'VALPO-C004', 'contacto ciudadano', 1),
+(2, 'VALPO-C005', 'trabajador municipal', 1),
+(10, 'VALPO-C005', 'contacto ciudadano', 1);
 
 UPDATE Centers c
 SET municipal_manager_id = ca.user_id
@@ -673,54 +721,54 @@ WHERE ca.center_id = c.center_id
 -- Solicitudes de prueba (mínimo 5 por centro, todas hechas por contactos ciudadanos)
 -- Centro C001
 INSERT INTO UpdateRequests (center_id, description, urgency, requested_by) VALUES
-('C001', 'Se necesitan con urgencia más frazadas para los niños menores de 5 años.', 'Alta', 3),
-('C001', 'El sistema de calefacción de la sala principal no funciona correctamente.', 'Alta', 3),
-('C001', 'Solicito reposición de pañales talla M, se están agotando rápidamente.', 'Media', 3),
-('C001', 'Las duchas del sector B tienen baja presión de agua.', 'Baja', 3),
-('C001', 'Necesitamos más productos de limpieza, especialmente cloro.', 'Media', 3),
-('C001', 'Hay goteras en el techo del comedor cuando llueve.', 'Media', 3);
+('VALPO-C001', 'Se necesitan con urgencia más frazadas para los niños menores de 5 años.', 'Alta', 3),
+('VALPO-C001', 'El sistema de calefacción de la sala principal no funciona correctamente.', 'Alta', 3),
+('VALPO-C001', 'Solicito reposición de pañales talla M, se están agotando rápidamente.', 'Media', 3),
+('VALPO-C001', 'Las duchas del sector B tienen baja presión de agua.', 'Baja', 3),
+('VALPO-C001', 'Necesitamos más productos de limpieza, especialmente cloro.', 'Media', 3),
+('VALPO-C001', 'Hay goteras en el techo del comedor cuando llueve.', 'Media', 3);
 
 -- Centro C002
 INSERT INTO UpdateRequests (center_id, description, urgency, requested_by) VALUES
-('C002', 'La iluminación del pasillo principal está fallando, varias ampolletas quemadas.', 'Media', 7),
-('C002', 'Necesitamos urgente reposición de agua embotellada, el stock está muy bajo.', 'Alta', 7),
-('C002', 'El baño del segundo piso tiene problemas de alcantarillado.', 'Alta', 7),
-('C002', 'Solicito más mantas polares, hace mucho frío en las noches.', 'Media', 7),
-('C002', 'Falta señalización de salidas de emergencia en el ala oeste.', 'Media', 7);
+('VALPO-C002', 'La iluminación del pasillo principal está fallando, varias ampolletas quemadas.', 'Media', 7),
+('VALPO-C002', 'Necesitamos urgente reposición de agua embotellada, el stock está muy bajo.', 'Alta', 7),
+('VALPO-C002', 'El baño del segundo piso tiene problemas de alcantarillado.', 'Alta', 7),
+('VALPO-C002', 'Solicito más mantas polares, hace mucho frío en las noches.', 'Media', 7),
+('VALPO-C002', 'Falta señalización de salidas de emergencia en el ala oeste.', 'Media', 7);
 
 -- Centro C003
 INSERT INTO UpdateRequests (center_id, description, urgency, requested_by) VALUES
-('C003', 'La conexión WiFi es intermitente, dificulta la comunicación con familiares.', 'Media', 8),
-('C003', 'Requerimos más kits de higiene personal para adultos.', 'Media', 8),
-('C003', 'El portón de acceso principal tiene la cerradura dañada.', 'Alta', 8),
-('C003', 'Solicito reposición de medicamentos básicos en el botiquín.', 'Alta', 8),
-('C003', 'Las cortinas divisorias de privacidad están rotas.', 'Media', 8),
-('C003', 'Necesitamos más almohadas, no hay suficientes para todas las personas.', 'Media', 8);
+('VALPO-C003', 'La conexión WiFi es intermitente, dificulta la comunicación con familiares.', 'Media', 8),
+('VALPO-C003', 'Requerimos más kits de higiene personal para adultos.', 'Media', 8),
+('VALPO-C003', 'El portón de acceso principal tiene la cerradura dañada.', 'Alta', 8),
+('VALPO-C003', 'Solicito reposición de medicamentos básicos en el botiquín.', 'Alta', 8),
+('VALPO-C003', 'Las cortinas divisorias de privacidad están rotas.', 'Media', 8),
+('VALPO-C003', 'Necesitamos más almohadas, no hay suficientes para todas las personas.', 'Media', 8);
 
 -- Centro C004
 INSERT INTO UpdateRequests (center_id, description, urgency, requested_by) VALUES
-('C004', 'Urgente: no hay suficientes frazadas para todas las personas, hace frío.', 'Alta', 9),
-('C004', 'El techo del baño tiene filtraciones, el piso se moja cuando llueve.', 'Alta', 9),
-('C004', 'Necesitamos más productos de higiene personal, especialmente jabón.', 'Media', 9),
-('C004', 'La puerta de entrada no cierra bien, hay corrientes de aire.', 'Media', 9),
-('C004', 'Solicito más colchonetas, no hay suficientes camas.', 'Alta', 9);
+('VALPO-C004', 'Urgente: no hay suficientes frazadas para todas las personas, hace frío.', 'Alta', 9),
+('VALPO-C004', 'El techo del baño tiene filtraciones, el piso se moja cuando llueve.', 'Alta', 9),
+('VALPO-C004', 'Necesitamos más productos de higiene personal, especialmente jabón.', 'Media', 9),
+('VALPO-C004', 'La puerta de entrada no cierra bien, hay corrientes de aire.', 'Media', 9),
+('VALPO-C004', 'Solicito más colchonetas, no hay suficientes camas.', 'Alta', 9);
 
 -- Centro C005
 INSERT INTO UpdateRequests (center_id, description, urgency, requested_by) VALUES
-('C005', 'Necesitamos más alimentos no perecederos, especialmente arroz y fideos.', 'Media', 10),
-('C005', 'El aire acondicionado del gimnasio no funciona, hace mucho calor.', 'Media', 10),
-('C005', 'Solicito reposición de artículos de limpieza para mantener la higiene.', 'Media', 10),
-('C005', 'Las graderías necesitan mantenimiento, hay tablas sueltas.', 'Baja', 10),
-('C005', 'Requerimos más ropa de abrigo, especialmente para niños.', 'Media', 10),
-('C005', 'Necesitamos más pañales de todas las tallas, se agotan rápidamente.', 'Alta', 10);
+('VALPO-C005', 'Necesitamos más alimentos no perecederos, especialmente arroz y fideos.', 'Media', 10),
+('VALPO-C005', 'El aire acondicionado del gimnasio no funciona, hace mucho calor.', 'Media', 10),
+('VALPO-C005', 'Solicito reposición de artículos de limpieza para mantener la higiene.', 'Media', 10),
+('VALPO-C005', 'Las graderías necesitan mantenimiento, hay tablas sueltas.', 'Baja', 10),
+('VALPO-C005', 'Requerimos más ropa de abrigo, especialmente para niños.', 'Media', 10),
+('VALPO-C005', 'Necesitamos más pañales de todas las tallas, se agotan rápidamente.', 'Alta', 10);
 
 
 -- Activación de centros
 INSERT INTO CentersActivations (center_id, activated_by, notes)
 VALUES
-('C001', 1, 'Activación por emergencia de incendio forestal en la zona alta de Valparaíso.'),
-('C002', 1, 'Apertura para contingencia en sector cerro Cordillera.'),
-('C003', 1, 'Activación preventiva por alerta meteorológica en Playa Ancha.');
+('VALPO-C001', 1, 'Activación por emergencia de incendio forestal en la zona alta de Valparaíso.'),
+('VALPO-C002', 1, 'Apertura para contingencia en sector cerro Cordillera.'),
+('VALPO-C003', 1, 'Activación preventiva por alerta meteorológica en Playa Ancha.');
 
 
 -- Sincroniza bandera redundante is_active según activaciones vigentes
@@ -748,7 +796,7 @@ VALUES
 WITH act AS (
   SELECT activation_id
   FROM CentersActivations
-  WHERE center_id = 'C001' AND ended_at IS NULL
+  WHERE center_id = 'VALPO-C001' AND ended_at IS NULL
   ORDER BY started_at DESC
   LIMIT 1
 )
@@ -783,7 +831,7 @@ VALUES
 WITH act AS (
   SELECT activation_id
   FROM CentersActivations
-  WHERE center_id = 'C002' AND ended_at IS NULL
+  WHERE center_id = 'VALPO-C002' AND ended_at IS NULL
   ORDER BY started_at DESC
   LIMIT 1
 )
@@ -817,7 +865,7 @@ VALUES
 WITH act AS (
   SELECT activation_id
   FROM CentersActivations
-  WHERE center_id = 'C003' AND ended_at IS NULL
+  WHERE center_id = 'VALPO-C003' AND ended_at IS NULL
   ORDER BY started_at DESC
   LIMIT 1
 )
@@ -838,6 +886,96 @@ INSERT INTO FamilyGroupMembers (family_id, person_id, parentesco) VALUES
 (6, 21, 'Hijo/a');
 
 
+-- ==========================================================
+-- EMERGENCIA DE EJEMPLO (colaboración intermunicipal)
+-- Regional: la declara el Super Administrador, por eso
+-- created_by_municipality_id queda NULL.
+-- ==========================================================
+INSERT INTO Emergencies (emergency_id, name, type, created_by, created_by_municipality_id)
+VALUES (1, 'Incendio forestal Valparaíso 2024', 'incendio',
+        (SELECT user_id FROM Users WHERE username = 'superadmin'), NULL);
+SELECT setval('emergencies_emergency_id_seq', (SELECT MAX(emergency_id) FROM Emergencies));
+
+INSERT INTO EmergencyParticipants (emergency_id, municipality_id) VALUES
+(1, 1), (1, 2), (1, 3), (1, 4);
+
+-- Dos de las tres activaciones de Valparaíso se cuelgan de la emergencia; la tercera
+-- queda local (emergency_id NULL) para ejercitar ambos caminos.
+UPDATE CentersActivations SET emergency_id = 1
+WHERE center_id IN ('VALPO-C001', 'VALPO-C002');
+
+-- ==========================================================
+-- COMUNAS ADICIONALES: Viña del Mar (2), Quilpué (3), Concón (4)
+-- 3 usuarios y 3 centros con descripción por comuna, para poder
+-- validar el aislamiento sin crear nada a mano.
+-- ==========================================================
+
+-- Usuarios (contraseña para todos: '12345')
+INSERT INTO Users (username, password_hash, email, role_id, nombre, rut, is_active, es_apoyo_admin, municipality_id)
+VALUES
+-- Viña del Mar
+('admin.vina',    '$2b$10$Psi3QNyicQITWPeGLOVXr.eqO9E72SBodzpSgJ42Z8EGgJZIYYR4m', 'admin@vinadelmar.cl',   1, 'Admin Viña del Mar',    '30.111.111-1', TRUE, TRUE,  2),
+('tm.vina',       '$2b$10$Psi3QNyicQITWPeGLOVXr.eqO9E72SBodzpSgJ42Z8EGgJZIYYR4m', 'tm@vinadelmar.cl',      2, 'Lorena Bustos',         '30.222.222-2', TRUE, FALSE, 2),
+('cc.vina',       '$2b$10$Psi3QNyicQITWPeGLOVXr.eqO9E72SBodzpSgJ42Z8EGgJZIYYR4m', 'cc.vina@comunidad.cl',  3, 'Ignacio Reyes',         '30.333.333-3', TRUE, FALSE, 2),
+-- Quilpué
+('admin.quilpue', '$2b$10$Psi3QNyicQITWPeGLOVXr.eqO9E72SBodzpSgJ42Z8EGgJZIYYR4m', 'admin@quilpue.cl',      1, 'Admin Quilpué',         '31.111.111-1', TRUE, TRUE,  3),
+('tm.quilpue',    '$2b$10$Psi3QNyicQITWPeGLOVXr.eqO9E72SBodzpSgJ42Z8EGgJZIYYR4m', 'tm@quilpue.cl',         2, 'Rodrigo Fuentes',       '31.222.222-2', TRUE, FALSE, 3),
+('cc.quilpue',    '$2b$10$Psi3QNyicQITWPeGLOVXr.eqO9E72SBodzpSgJ42Z8EGgJZIYYR4m', 'cc.quilpue@comunidad.cl', 3, 'Marcela Ortiz',       '31.333.333-3', TRUE, FALSE, 3),
+-- Concón
+('admin.concon',  '$2b$10$Psi3QNyicQITWPeGLOVXr.eqO9E72SBodzpSgJ42Z8EGgJZIYYR4m', 'admin@concon.cl',       1, 'Admin Concón',          '32.111.111-1', TRUE, TRUE,  4),
+('tm.concon',     '$2b$10$Psi3QNyicQITWPeGLOVXr.eqO9E72SBodzpSgJ42Z8EGgJZIYYR4m', 'tm@concon.cl',          2, 'Felipe Cárdenas',       '32.222.222-2', TRUE, FALSE, 4),
+('cc.concon',     '$2b$10$Psi3QNyicQITWPeGLOVXr.eqO9E72SBodzpSgJ42Z8EGgJZIYYR4m', 'cc.concon@comunidad.cl', 3, 'Daniela Vergara',      '32.333.333-3', TRUE, FALSE, 4);
+
+-- Centros SIN center_id explícito: los genera trg_generate_center_id.
+-- Deben quedar VINA-C001..003, QUILP-C001..003 y CONCO-C001..003, lo que valida
+-- el trigger y el reinicio del correlativo por comuna durante el propio seed.
+INSERT INTO Centers (municipality_id, name, address, type, capacity, latitude, longitude) VALUES
+(2, 'Estadio Sausalito',                'Av. Los Castaños s/n, Viña del Mar', 'albergue',             200, -33.0206, -71.5372),
+(2, 'Sede Vecinal Forestal Alto',       'Av. Alessandri 2100, Forestal',      'albergue comunitario',  60, -33.0289, -71.5081),
+(2, 'Escuela República del Ecuador',    'Calle Limache 1450',                 'albergue',             120, -33.0245, -71.5498),
+(3, 'Gimnasio Municipal de Quilpué',    'Av. Los Carrera 900',                'albergue',             150, -33.0472, -71.4423),
+(3, 'Sede Vecinal El Belloto Norte',    'Av. Freire 350, El Belloto',         'albergue comunitario',  70, -33.0563, -71.3861),
+(3, 'Liceo Municipal de Quilpué',       'Claudio Vicuña 480',                 'albergue',              90, -33.0451, -71.4467),
+(4, 'Centro Deportivo Concón',          'Av. Borgoño 2500',                   'albergue',             100, -32.9312, -71.5236),
+(4, 'Sede Vecinal Bosques de Montemar', 'Camino Costero 1800',                'albergue comunitario',  50, -32.9598, -71.5451),
+(4, 'Escuela Básica Concón',            'Av. Manantiales 640',                'albergue',              80, -32.9260, -71.5178);
+
+-- Descripciones de los 9 centros nuevos (versión acotada del formulario).
+INSERT INTO CentersDescription (
+    center_id, nombre_organizacion, nombre_dirigente, cargo_dirigente, telefono_contacto,
+    tipo_inmueble, numero_habitaciones, estado_conservacion,
+    muro_hormigon, piso_radier, techo_losa,
+    agua_potable, electricidad, alcantarillado,
+    estado_banos, wc_proporcion_personas, duchas_proporcion_personas,
+    posee_habitaciones, separacion_familias,
+    cuenta_con_mesas_sillas, cocina_comedor_adecuados, cuenta_con_refrigerador,
+    sistema_evacuacion_definido,
+    existen_extintores, existen_generadores, existen_luces_emergencias
+) VALUES
+((SELECT center_id FROM Centers WHERE name='Estadio Sausalito'),                'Corporación Municipal de Deportes', 'Lorena Bustos',   'Coordinadora',  '990110011', 'Recinto deportivo techado', 10, 4, TRUE,  TRUE, TRUE,  4, 4, 4, 4, 4, 3, 3, 3, 4, 4, 4, 4, TRUE,  TRUE,  TRUE),
+((SELECT center_id FROM Centers WHERE name='Sede Vecinal Forestal Alto'),       'Junta de Vecinos Forestal Alto',    'Ignacio Reyes',   'Presidente',    '990110012', 'Sede social de un piso',     4, 3, TRUE,  TRUE, FALSE, 3, 4, 3, 3, 3, 2, 3, 3, 3, 2, 2, 3, TRUE,  FALSE, TRUE),
+((SELECT center_id FROM Centers WHERE name='Escuela República del Ecuador'),    'DAEM Viña del Mar',                 'Paula Herrera',   'Directora',     '990110013', 'Establecimiento educacional', 8, 4, TRUE, TRUE, TRUE,  4, 4, 4, 4, 3, 3, 4, 4, 4, 3, 3, 4, TRUE,  TRUE,  TRUE),
+((SELECT center_id FROM Centers WHERE name='Gimnasio Municipal de Quilpué'),    'Municipalidad de Quilpué',          'Rodrigo Fuentes', 'Encargado',     '990220021', 'Gimnasio techado',           6, 4, TRUE,  TRUE, TRUE,  4, 4, 4, 4, 4, 3, 2, 3, 4, 4, 3, 4, TRUE,  TRUE,  TRUE),
+((SELECT center_id FROM Centers WHERE name='Sede Vecinal El Belloto Norte'),    'Junta de Vecinos El Belloto Norte', 'Marcela Ortiz',   'Presidenta',    '990220022', 'Sede social de un piso',     5, 3, TRUE,  TRUE, FALSE, 3, 3, 3, 3, 3, 2, 3, 3, 3, 3, 2, 3, TRUE,  FALSE, FALSE),
+((SELECT center_id FROM Centers WHERE name='Liceo Municipal de Quilpué'),       'DAEM Quilpué',                      'Sergio Maldonado','Director',      '990220023', 'Establecimiento educacional', 9, 4, TRUE, TRUE, TRUE,  4, 4, 4, 4, 4, 3, 4, 4, 4, 3, 3, 4, TRUE,  TRUE,  TRUE),
+((SELECT center_id FROM Centers WHERE name='Centro Deportivo Concón'),          'Municipalidad de Concón',           'Felipe Cárdenas', 'Encargado',     '990330031', 'Recinto deportivo',          5, 4, TRUE,  TRUE, TRUE,  4, 4, 4, 4, 4, 3, 3, 3, 4, 4, 3, 4, TRUE,  TRUE,  TRUE),
+((SELECT center_id FROM Centers WHERE name='Sede Vecinal Bosques de Montemar'), 'Junta de Vecinos Montemar',         'Daniela Vergara', 'Presidenta',    '990330032', 'Sede social de un piso',     4, 3, TRUE,  TRUE, FALSE, 3, 3, 3, 3, 3, 2, 3, 3, 3, 2, 2, 3, TRUE,  FALSE, TRUE),
+((SELECT center_id FROM Centers WHERE name='Escuela Básica Concón'),            'DAEM Concón',                       'Rosa Cifuentes',  'Directora',     '990330033', 'Establecimiento educacional', 7, 4, TRUE, TRUE, TRUE,  4, 4, 4, 4, 3, 3, 4, 4, 4, 3, 3, 4, TRUE,  TRUE,  TRUE);
+
+-- ==========================================================
+-- FIN DEL SEMBRADO: se quitan los defaults temporales.
+-- A partir de acá, cualquier INSERT sin municipality_id explícito falla,
+-- que es exactamente lo que queremos: el valor debe venir del JWT o del padre.
+-- ==========================================================
+ALTER TABLE Users                ALTER COLUMN municipality_id DROP DEFAULT;
+ALTER TABLE CentersActivations   ALTER COLUMN municipality_id DROP DEFAULT;
+ALTER TABLE Persons              ALTER COLUMN municipality_id DROP DEFAULT;
+ALTER TABLE FamilyGroups         ALTER COLUMN municipality_id DROP DEFAULT;
+ALTER TABLE CenterInventoryItems ALTER COLUMN municipality_id DROP DEFAULT;
+
+-- La secuencia de Roles queda sobre el mayor id existente (4 = Super Administrador).
+SELECT setval('roles_role_id_seq', (SELECT MAX(role_id) FROM Roles));
+
 -- Confirmaciones finales de integridad de datos
 
 -- Centros activos y sus activaciones vigentes
@@ -856,6 +994,31 @@ ORDER BY c.center_id;
 SELECT fg.family_id, fg.activation_id, ca.center_id, ca.ended_at
 FROM FamilyGroups fg
 JOIN CentersActivations ca ON ca.activation_id = fg.activation_id;
+
+-- Confirmaciones multi-tenant
+
+-- Centros por comuna y correlativo. Esperado: VALPO 12 (contador 12),
+-- VINA / QUILP / CONCO 3 cada una (contador 3), y el primer id de cada
+-- comuna nueva debe ser SHORTNAME-C001.
+SELECT m.shortname, m.center_seq_counter, COUNT(c.center_id) AS centros, MIN(c.center_id) AS primer_id
+FROM Municipalities m
+LEFT JOIN Centers c ON c.municipality_id = m.municipality_id
+GROUP BY m.municipality_id, m.shortname, m.center_seq_counter
+ORDER BY m.municipality_id;
+
+-- Roles: deben ser exactamente 1,2,3,4.
+SELECT role_id, role_name FROM Roles ORDER BY role_id;
+
+-- El único usuario sin comuna debe ser el Super Administrador.
+SELECT username, role_id, municipality_id FROM Users WHERE municipality_id IS NULL;
+
+-- Ningún default de sembrado debe haber quedado vivo (0 filas esperadas).
+-- Se excluye el nextval del propio PK de Municipalities, que no es un default de sembrado.
+SELECT table_name, column_name, column_default
+FROM information_schema.columns
+WHERE column_name = 'municipality_id'
+  AND column_default IS NOT NULL
+  AND column_default NOT LIKE 'nextval%';
 
 -- Confirmación final
 SELECT 'Script definitivo ejecutado. Todas las tablas y datos de prueba han sido creados.';

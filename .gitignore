@@ -27,3 +27,6 @@ dist-ssr
 appcopio-backend/package-lock.json
 appcopio-backend/package.json
 appcopio-backend/package.json
+CLAUDE.md
+AppCopio_MultiTenant_Plan.md
+.claude/settings.local.json
