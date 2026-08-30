@@ -63,11 +63,14 @@ export default function App() {
             <Route path="/typo" element={<ExampleFrontend />} /> 
           </Route>
 
-          {/* 2) Protegidas (roles 1,2,3; incluye es_apoyo_admin) */}
+          {/* 2) Protegidas (roles 1,2,3 y 4; incluye es_apoyo_admin).
+              El rol 4 (Super Administrador) se incluye solo para que no rebote al home
+              y pueda llegar a su perfil: no tiene comuna, así que el Navbar no le
+              muestra los menús municipales. */}
           <Route
             element={
               <ProtectedRoute
-                allowedRoleIds={[1, 2, 3]}
+                allowedRoleIds={[1, 2, 3, 4]}
                 checkSupportAdmin={true}
               />
             }
@@ -75,7 +78,13 @@ export default function App() {
             {/* /admin con layout */}
             <Route element={<MainLayout />}>
               <Route path={paths.admin.centers.root} element={<CenterManagementPage />} />
-              <Route path={paths.admin.centers.new} element={<MultiStepCenterForm />} />
+              {/* Crear centros: solo Administrador, Trabajador Municipal o apoyo admin.
+                  Debe coincidir con requireCenterManagement del backend. */}
+              <Route
+                element={<ProtectedRoute allowedRoleIds={[1, 2]} checkSupportAdmin={true} />}
+              >
+                <Route path={paths.admin.centers.new} element={<MultiStepCenterForm />} />
+              </Route>
               <Route path={paths.admin.users} element={<UsersManagementPage />} />
               <Route path={paths.admin.updates} element={<UpdatesPage />} />
               <Route path={paths.profile} element={<MyUserPage />} />

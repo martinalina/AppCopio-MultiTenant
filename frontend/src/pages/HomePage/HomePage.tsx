@@ -1,12 +1,17 @@
 // src/pages/HomePage/HomePage.tsx
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import { Box, Button, Container, Typography, Stack, Paper } from '@mui/material';
 import MapIcon from '@mui/icons-material/Map';
 import LoginIcon from '@mui/icons-material/Login';
 
 const HomePage: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  // Con multi-tenant la portada ya no puede decir "Valparaíso" fijo: muestra la comuna
+  // del usuario logueado y, sin sesión, el nombre genérico del sistema.
+  const municipalityName = user?.municipality_name || 'Red de Municipalidades';
 
   return (
     <Box
@@ -113,7 +118,7 @@ const HomePage: React.FC = () => {
               fontSize: { xs: '1rem', sm: '1.25rem' },
             }}
           >
-            Valparaíso
+            {municipalityName}
           </Typography>
 
           {/* Botones de Acción */}

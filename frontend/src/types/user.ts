@@ -11,9 +11,13 @@ export interface User {
   genero?: string | null;
   celular?: string | null;
   is_active: boolean;
-  role_name?: string | null; 
+  role_name?: string | null;
   es_apoyo_admin?: boolean;
-  active_assignments?: number; 
+  active_assignments?: number;
+  /** Comuna del usuario. null solo para el Super Administrador (role_id 4). */
+  municipality_id?: number | null;
+  municipality_shortname?: string | null;
+  municipality_name?: string | null;
 };
 
 export interface UsersApiResponse {

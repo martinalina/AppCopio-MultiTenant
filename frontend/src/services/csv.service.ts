@@ -36,7 +36,7 @@ export const CSV_MODULE_CONFIGS: Record<
     requiredColumns: ['center_id', 'item_name', 'category', 'quantity', 'unit'],
     optionalColumns: ['notes', 'updated_by'],
     sampleRows: [
-      { center_id: 'C001', item_name: 'Arroz', category: 'Alimentos', quantity: 100, unit: 'kg', updated_by: 'jperez', notes: 'Donación JJVV' }
+      { center_id: 'VALPO-C001', item_name: 'Arroz', category: 'Alimentos', quantity: 100, unit: 'kg', updated_by: 'jperez', notes: 'Donación JJVV' }
     ]
   },
   residents: {
@@ -88,7 +88,7 @@ export const CSV_MODULE_CONFIGS: Record<
     requiredColumns: ['username', 'center_id', 'role'],
     optionalColumns: ['changed_by_username'],
     sampleRows: [
-      { username: 'jperez', center_id: 'C001', role: 'trabajador municipal', changed_by_username: 'mgarcia' }
+      { username: 'jperez', center_id: 'VALPO-C001', role: 'trabajador municipal', changed_by_username: 'mgarcia' }
     ]
   },
   updates: {
@@ -97,7 +97,7 @@ export const CSV_MODULE_CONFIGS: Record<
     requiredColumns: ['center_id', 'description', 'urgency', 'requested_by_username'],
     optionalColumns: [],
     sampleRows: [
-      { center_id: 'C001', description: 'Actualizar stock de agua.', urgency: 'alta', requested_by_username: 'jperez' }
+      { center_id: 'VALPO-C001', description: 'Actualizar stock de agua.', urgency: 'alta', requested_by_username: 'jperez' }
     ]
   }
 };

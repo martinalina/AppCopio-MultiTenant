@@ -43,7 +43,7 @@ import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 
 import { useAuth } from "@/contexts/AuthContext";
-import { isAdminOrSupport, isFieldUser, isMunicipalWorker } from "@/utils/authz";
+import { isAdminOrSupport, isFieldUser, isMunicipalWorker, isSuperAdmin } from "@/utils/authz";
 import { paths } from "@/routes/paths";
 import { useUnreadNotifications } from "@/hooks/useUnreadNotifications";
 
@@ -140,12 +140,18 @@ export default function VerticalNavbar() {
     if (!user?.role_name) return null;
 
     const roleName = user.role_name.toLowerCase();
-    
+
     let label = "";
     let icon = <WorkIcon fontSize="small" />;
-    let color: "primary" | "success" | "info" = "info";
+    let color: "primary" | "success" | "info" | "warning" = "info";
 
-    if (roleName.includes("admin") || user.es_apoyo_admin) {
+    // El Super Administrador va primero: su role_name también contiene "admin" y si no
+    // se distingue acá quedaría etiquetado como "Administrador" municipal.
+    if (isSuperAdmin(user)) {
+      label = "Super Administrador";
+      icon = <VerifiedUserIcon fontSize="small" />;
+      color = "warning";
+    } else if (roleName.includes("admin") || user.es_apoyo_admin) {
       label = "Administrador";
       icon = <AdminPanelSettingsIcon fontSize="small" />;
       color = "primary";
@@ -166,6 +172,10 @@ export default function VerticalNavbar() {
   };
 
   const roleDisplay = getRoleDisplay();
+
+  // Comuna activa. Es clave en QA manual: si estás viendo datos que no calzan, lo
+  // primero que quieres saber es con qué comuna estás logueado.
+  const municipalityLabel = user?.municipality_name || user?.municipality_shortname || null;
 
   const handleMenuOpen = (e: React.MouseEvent<HTMLElement>) => setAnchorEl(e.currentTarget);
   const handleMenuClose = () => setAnchorEl(null);
@@ -497,6 +507,35 @@ export default function VerticalNavbar() {
                     }}
                   />
                 )}
+
+                {/* Comuna activa */}
+                {municipalityLabel && (
+                  <Chip
+                    icon={<LocationCityIcon />}
+                    label={municipalityLabel}
+                    size="small"
+                    variant="outlined"
+                    sx={{
+                      height: 20,
+                      fontSize: "0.688rem",
+                      fontWeight: 500,
+                      mt: 0.5,
+                      color: "white",
+                      borderColor: "rgba(255, 255, 255, 0.4)",
+                      maxWidth: "100%",
+                      "& .MuiChip-icon": {
+                        fontSize: "0.875rem",
+                        marginLeft: "4px",
+                        color: "rgba(255, 255, 255, 0.8)",
+                      },
+                      "& .MuiChip-label": {
+                        padding: "0 6px",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      },
+                    }}
+                  />
+                )}
               </Box>
             </Box>
           ) : (
@@ -510,7 +549,11 @@ export default function VerticalNavbar() {
               }}
               onClick={handleMenuOpen}
             >
-              <Tooltip title={`${user?.nombre}${roleDisplay ? ` - ${roleDisplay.label}` : ""}`} placement="right" arrow>
+              <Tooltip
+                title={`${user?.nombre}${roleDisplay ? ` - ${roleDisplay.label}` : ""}${municipalityLabel ? ` - ${municipalityLabel}` : ""}`}
+                placement="right"
+                arrow
+              >
                 <Badge
                   overlap="circular"
                   anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
