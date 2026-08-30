@@ -1,7 +1,7 @@
 // src/routes/centerRoutes.ts
 import { Router, RequestHandler } from 'express';
 import pool from '../config/db';
-import { requireUser } from "../auth/requireUser";
+import { requireUser, requireTenant } from "../auth/requireUser";
 
 // CAMBIO: Importamos TODAS las funciones necesarias desde nuestro servicio, incluyendo las de inventario.
 import {
@@ -36,7 +36,8 @@ import {
 import { sendNotification } from '../services/notificationService';
 
 import { getCenterGroups } from '../services/familyService';
-import { requireAuth } from '../auth/middleware';
+import { requireAuth, requireCenterManagement, optionalAuth } from '../auth/middleware';
+import { withTenant, withTenantOrPublic } from '../auth/tenantContext';
 
 
 const router = Router();
@@ -91,10 +92,22 @@ const createCenter: RequestHandler = async (req, res) => {
     const normalizedType = type.toLowerCase() === 'acopio' ? 'acopio' : 'albergue';
     const bodyWithNormalizedType = { ...req.body, type: normalizedType };
     
+    // La comuna sale del JWT, nunca del body (regla dura del proyecto).
+    let municipalityId: number;
+    try {
+        municipalityId = requireTenant(req);
+    } catch (e: any) {
+        res.status(e?.status || 403).json({
+            error: e?.message || 'FORBIDDEN',
+            message: e?.publicMessage || 'No puedes crear centros sin una comuna asociada.',
+        });
+        return;
+    }
+
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
-        const newCenter = await createCenterService(client, bodyWithNormalizedType);
+        const newCenter = await createCenterService(client, bodyWithNormalizedType, municipalityId);
         await client.query('COMMIT');
         res.status(201).json(newCenter);
     } catch (error) {
@@ -744,38 +757,38 @@ const listAvailableWorkers: RequestHandler = async (req, res) => {
 // =================================================================
 
 // --- Rutas Principales de Centros (CRUD) ---
-router.get('/',  listCenters);
-router.post('/', requireAuth, createCenter);
-router.get('/:id', requireAuth, getCenter);
-router.put('/:id', requireAuth, updateCenter);
-router.delete('/:id', requireAuth, deleteCenter);
+router.get('/', optionalAuth, withTenantOrPublic,  listCenters);
+router.post('/', requireAuth, requireCenterManagement, withTenant, createCenter);
+router.get('/:id', requireAuth, withTenant, getCenter);
+router.put('/:id', requireAuth, withTenant, updateCenter);
+router.delete('/:id', requireAuth, withTenant, deleteCenter);
 
 // --- Rutas de Estado y Activación ---
-router.patch('/:id/status', requireAuth, setActivationStatus);
-router.patch('/:id/operational-status', requireAuth, setOperationalStatus);
-router.patch('/:id/fullness', requireAuth, updateFullness);
-router.get('/status/active', requireAuth, listActiveCenters);
-router.get('/:id/activation', requireAuth, getCenterActiveActivation);
-router.get('/:centerId/activations', requireAuth, listCenterActivations);
-router.get('/:centerId/activations/:activationId', requireAuth, getCenterActivationDetail);
+router.patch('/:id/status', requireAuth, withTenant, setActivationStatus);
+router.patch('/:id/operational-status', requireAuth, withTenant, setOperationalStatus);
+router.patch('/:id/fullness', requireAuth, withTenant, updateFullness);
+router.get('/status/active', requireAuth, withTenant, listActiveCenters);
+router.get('/:id/activation', requireAuth, withTenant, getCenterActiveActivation);
+router.get('/:centerId/activations', requireAuth, withTenant, listCenterActivations);
+router.get('/:centerId/activations/:activationId', requireAuth, withTenant, getCenterActivationDetail);
 
 // --- Rutas de Datos Específicos del Centro ---
-router.get('/:centerId/capacity',  getCapacity);
-router.get('/:centerId/people', requireAuth, listPeople);
-router.get('/:centerID/residents', requireAuth, listGroups)
+router.get('/:centerId/capacity', optionalAuth, withTenantOrPublic,  getCapacity);
+router.get('/:centerId/people', requireAuth, withTenant, listPeople);
+router.get('/:centerID/residents', requireAuth, withTenant, listGroups)
 // --- Rutas de Inventario (Existentes) ---
-router.get('/:centerId/inventory', requireAuth, getInventory);
-router.post('/:centerId/inventory', requireAuth, addInventoryItem);
-router.put('/:centerId/inventory/:itemId', requireAuth, updateInventoryItem);
-router.delete('/:centerId/inventory/:itemId', requireAuth, deleteInventoryItem);
+router.get('/:centerId/inventory', requireAuth, withTenant, getInventory);
+router.post('/:centerId/inventory', requireAuth, withTenant, addInventoryItem);
+router.put('/:centerId/inventory/:itemId', requireAuth, withTenant, updateInventoryItem);
+router.delete('/:centerId/inventory/:itemId', requireAuth, withTenant, deleteInventoryItem);
 
 // --- Rutas de Inventario (NUEVAS para HDU) ---
-router.post('/:centerId/inventory/exit', requireAuth, registerExit);
-router.post('/:centerId/inventory/exit/bulk', requireAuth, registerBulkExit);
-router.post('/:centerId/inventory/box', requireAuth, createInventoryBox);
-router.get('/:centerId/inventory/stats', requireAuth, getInventoryStatistics);
+router.post('/:centerId/inventory/exit', requireAuth, withTenant, registerExit);
+router.post('/:centerId/inventory/exit/bulk', requireAuth, withTenant, registerBulkExit);
+router.post('/:centerId/inventory/box', requireAuth, withTenant, createInventoryBox);
+router.get('/:centerId/inventory/stats', requireAuth, withTenant, getInventoryStatistics);
 
-router.get('/:centerId/assigned-users', requireAuth, listAssignedUsers);
-router.get('/:centerId/available-workers', requireAuth, listAvailableWorkers);
+router.get('/:centerId/assigned-users', requireAuth, withTenant, listAssignedUsers);
+router.get('/:centerId/available-workers', requireAuth, withTenant, listAvailableWorkers);
 
 export default router;

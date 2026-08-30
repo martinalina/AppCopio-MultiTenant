@@ -4,7 +4,8 @@
 
 import { Router, RequestHandler } from 'express';
 import { requireUser } from '../auth/requireUser';
-import { requireAuth } from '../auth/middleware';
+import { requireAuth, optionalAuth } from '../auth/middleware';
+import { withTenant, withTenantOrPublic } from '../auth/tenantContext';
 import {
   getPrioritiesByCenter,
   upsertPriority,
@@ -82,10 +83,10 @@ const getInventoryWithPriorities: RequestHandler = async (req, res) => {
 // ============================================================================
 // 3. EXPORT
 // ============================================================================
-router.get('/:centerId/priorities', getItemsPriorityByCenter);
-router.post('/:centerId/priorities/:itemId', requireAuth, updateItemsPriorityByCenter);
-router.delete('/:centerId/priorities/:itemId', requireAuth,  deleteItemsPriorityByCenter);
-router.get('/:centerId/itemsPriorities',  getInventoryWithPriorities);
+router.get('/:centerId/priorities', optionalAuth, withTenantOrPublic, getItemsPriorityByCenter);
+router.post('/:centerId/priorities/:itemId', requireAuth, withTenant, updateItemsPriorityByCenter);
+router.delete('/:centerId/priorities/:itemId', requireAuth, withTenant,  deleteItemsPriorityByCenter);
+router.get('/:centerId/itemsPriorities', optionalAuth, withTenantOrPublic,  getInventoryWithPriorities);
 
 
 export default router;

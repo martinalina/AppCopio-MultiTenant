@@ -24,7 +24,7 @@ export async function getAllCategories(db: Db): Promise<Category[]> {
  */
 export async function addCategory(db: Db, name: string): Promise<Category> {
     const newCategory = await db.query(
-        "INSERT INTO Categories (name) VALUES ($1) RETURNING *",
+        "INSERT INTO Categories (name, municipality_id) VALUES ($1, current_tenant()) RETURNING *",
         [name.trim()]
     );
     return newCategory.rows[0];

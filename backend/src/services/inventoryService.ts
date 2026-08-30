@@ -195,7 +195,7 @@ export async function createBox(
             if (productResult.rowCount === 0) {
                 // Crear nuevo producto
                 const newProduct = await client.query(
-                    'INSERT INTO Products (name, category_id, unit) VALUES ($1, $2, $3) RETURNING item_id',
+                    'INSERT INTO Products (name, category_id, unit, municipality_id) VALUES ($1, $2, $3, current_tenant()) RETURNING item_id',
                     [item.itemName.trim(), item.categoryId!, item.unit!]
                 );
                 itemId = newProduct.rows[0].item_id;
@@ -208,15 +208,15 @@ export async function createBox(
 
         // Añadir al inventario
         const inventoryResult = await client.query(
-            `INSERT INTO CenterInventoryItems (center_id, item_id, quantity, updated_by) 
-             VALUES ($1, $2, $3, $4)
+            `INSERT INTO CenterInventoryItems (center_id, item_id, quantity, updated_by, municipality_id) 
+             VALUES ($1, $2, $3, $4, (SELECT municipality_id FROM Centers WHERE center_id = $5))
              ON CONFLICT (center_id, item_id) 
              DO UPDATE SET 
                 quantity = CenterInventoryItems.quantity + EXCLUDED.quantity, 
                 updated_at = NOW(), 
                 updated_by = EXCLUDED.updated_by
              RETURNING *`,
-            [centerId, itemId, item.quantity, boxData.userId]
+            [centerId, itemId, item.quantity, boxData.userId, centerId]
         );
 
         // Registrar en el historial

@@ -6,7 +6,17 @@ const refreshSecret = process.env.JWT_REFRESH_SECRET!;
 const accessTtlMin = Number(process.env.ACCESS_TOKEN_TTL_MIN || 15); // 15 minutos por defecto
 const refreshTtlDays = Number(process.env.REFRESH_TOKEN_TTL_DAYS || 7);
 
-export type JwtUser = { user_id: number; username: string; role_id: number; role_name: string; is_active: boolean, es_apoyo_admin: boolean };
+export type JwtUser = {
+  user_id: number;
+  username: string;
+  role_id: number;
+  role_name: string;
+  is_active: boolean;
+  es_apoyo_admin: boolean;
+  /** null solo para el Super Administrador (role_id 4). */
+  municipality_id: number | null;
+  municipality_shortname: string | null;
+};
 
 export function signAccessToken(payload: JwtUser) {
   return jwt.sign(payload, accessSecret, { expiresIn: `${accessTtlMin}m` });

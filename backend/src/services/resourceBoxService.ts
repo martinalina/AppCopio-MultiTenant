@@ -79,8 +79,8 @@ export async function createResourceBox(
                 // Si no tiene item_id, crear el producto primero
                 if (!finalItemId && item.item_name) {
                     const productInsertQuery = `
-                        INSERT INTO Products (name, unit, category_id)
-                        VALUES ($1, $2, $3)
+                        INSERT INTO Products (name, unit, category_id, municipality_id)
+                        VALUES ($1, $2, $3, current_tenant())
                         RETURNING item_id
                     `;
                     const productResult = await client.query(productInsertQuery, [

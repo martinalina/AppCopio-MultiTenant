@@ -148,8 +148,8 @@ export async function getUserWithAssignments(db: Db, id: number) {
 export async function createUser(db: Db, data: UserCreate) {
     const hash = await bcrypt.hash(data.password!, 10);
     const sql = `
-        INSERT INTO users (rut, username, password_hash, email, role_id, nombre, genero, celular, is_active, es_apoyo_admin)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        INSERT INTO users (rut, username, password_hash, email, role_id, nombre, genero, celular, is_active, es_apoyo_admin, municipality_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, current_tenant())
         RETURNING user_id, rut, username, email, role_id, nombre, is_active`;
     const params = [data.rut, data.username, hash, data.email, data.role_id, data.nombre, data.genero, data.celular, data.is_active ?? true, data.es_apoyo_admin ?? false];
     const result = await db.query(sql, params);

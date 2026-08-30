@@ -29,10 +29,10 @@ export async function createFamilyGroupInDB(db: Db, args: {
 }): Promise<number> {
     const necesidades = needsVectorFromSelected(args.data?.selectedNeeds);
     const sql = `
-        INSERT INTO FamilyGroups (activation_id, jefe_hogar_person_id, observaciones, necesidades_basicas)
-        VALUES ($1, $2, $3, $4::int[])
+        INSERT INTO FamilyGroups (activation_id, jefe_hogar_person_id, observaciones, necesidades_basicas, municipality_id)
+        VALUES ($1, $2, $3, $4::int[], (SELECT municipality_id FROM CentersActivations WHERE activation_id = $5))
         RETURNING family_id`;
-    const params = [args.activation_id, args.jefe_hogar_person_id ?? null, args.data?.observations ?? null, necesidades];
+    const params = [args.activation_id, args.jefe_hogar_person_id ?? null, args.data?.observations ?? null, necesidades, args.activation_id];
     const { rows } = await db.query(sql, params);
     return rows[0].family_id as number;
 }

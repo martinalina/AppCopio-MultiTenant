@@ -290,6 +290,26 @@ CREATE POLICY centers_public_read ON Centers
   FOR SELECT
   USING (is_public_context() AND is_active = TRUE);
 
+-- El formulario público de voluntarios necesita resolver la activación abierta de un
+-- centro activo, y el tablero público de avisos de servicio lee el Dataset asociado.
+-- Ambas lecturas quedan acotadas al mismo límite que el mapa público: centro activo.
+-- La subconsulta a Centers también pasa por RLS, así que en contexto público solo
+-- resuelve centros activos.
+CREATE POLICY centersactivations_public_read ON CentersActivations
+  FOR SELECT
+  USING (
+    is_public_context()
+    AND ended_at IS NULL
+    AND center_id IN (SELECT c.center_id FROM Centers c WHERE c.is_active = TRUE)
+  );
+
+CREATE POLICY datasets_public_read ON Datasets
+  FOR SELECT
+  USING (
+    is_public_context()
+    AND center_id IN (SELECT c.center_id FROM Centers c WHERE c.is_active = TRUE)
+  );
+
 -- ----------------------------------------------------------
 -- 8. RLS: catálogos opcionalmente compartidos (NULL = global)
 -- ----------------------------------------------------------

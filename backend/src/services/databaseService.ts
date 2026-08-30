@@ -26,11 +26,11 @@ export async function createDatasetDB(db: Db, userId: number, args: {
   activation_id: number; center_id: string; name: string; key: string; config?: any;
 }) : Promise<Dataset>{
   const sql = `
-    INSERT INTO Datasets (activation_id, center_id, name, key, config, created_by)
-    VALUES ($1, $2, $3, $4, COALESCE($5, '{}'::jsonb), $6)
+    INSERT INTO Datasets (activation_id, center_id, name, key, config, created_by, municipality_id)
+    VALUES ($1, $2, $3, $4, COALESCE($5, '{}'::jsonb), $6, (SELECT municipality_id FROM Centers WHERE center_id = $7))
     RETURNING dataset_id, activation_id, center_id, name, key, config,config->>'template_key' AS template_key, created_at`;
   const { rows } = await db.query(sql, [
-    args.activation_id, args.center_id, args.name, args.key, args.config ?? {}, userId
+    args.activation_id, args.center_id, args.name, args.key, args.config ?? {}, userId, args.center_id
   ]);
   return rows[0];
 }

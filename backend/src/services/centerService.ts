@@ -68,28 +68,32 @@ export async function getCenterById(db: Db, id: string) {
     };
 }
 
-export async function createCenter(client: PoolClient, body: any) {
+export async function createCenter(client: PoolClient, body: any, municipalityId: number) {
     const { name, latitude, longitude, type, ...restOfBody } = body;
-    
+
     // Validación de campos requeridos básicos
     if (!name || typeof latitude !== 'number' || typeof longitude !== 'number' || !type) {
         throw new Error('Campos requeridos: name, type, latitude, longitude.');
     }
-    
+
+    // municipalityId viene del JWT (requireTenant), nunca del body: así un usuario no
+    // puede crear centros a nombre de otra comuna. El center_id lo arma el trigger
+    // trg_generate_center_id a partir de esta comuna (SHORTNAME-C00X).
     const centerQuery = `
-        INSERT INTO Centers (name, address, type, capacity, is_active, latitude, longitude, should_be_active, comunity_charge_id, municipal_manager_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING center_id`;
+        INSERT INTO Centers (name, address, type, capacity, is_active, latitude, longitude, should_be_active, comunity_charge_id, municipal_manager_id, municipality_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING center_id`;
     const centerValues = [
-        name, 
-        restOfBody.address || null, 
-        type, 
-        restOfBody.capacity || 0, 
+        name,
+        restOfBody.address || null,
+        type,
+        restOfBody.capacity || 0,
         false, // is_active siempre false al crear
-        latitude, 
-        longitude, 
-        restOfBody.should_be_active || false, 
-        restOfBody.comunity_charge_id || null, 
-        restOfBody.municipal_manager_id || null
+        latitude,
+        longitude,
+        restOfBody.should_be_active || false,
+        restOfBody.comunity_charge_id || null,
+        restOfBody.municipal_manager_id || null,
+        municipalityId
     ];
     
     const centerResult = await client.query(centerQuery, centerValues);
@@ -163,8 +167,10 @@ export async function updateActivationStatus(client: PoolClient,
     if (isActive) {
         const activationNotes = notes || 'Activación del centro.';
             const { rows: activationRows } = await client.query(
-                'INSERT INTO CentersActivations (center_id, activated_by, notes) VALUES ($1, $2, $3) RETURNING activation_id', 
-                [id, userId, activationNotes]
+                `INSERT INTO CentersActivations (center_id, activated_by, notes, municipality_id)
+                 VALUES ($1, $2, $3, (SELECT municipality_id FROM Centers WHERE center_id = $4))
+                 RETURNING activation_id`,
+                [id, userId, activationNotes, id]
             );
             
             const activationId = activationRows[0].activation_id;
@@ -431,12 +437,12 @@ export async function getCenterCapacity(db: Db, centerId: string) {
     if (centerResult.rowCount === 0) return null;
     const totalCapacity = centerResult.rows[0].capacity;
 
+    // Este endpoint también se sirve sin login (mapa público). Las tablas de personas
+    // y familias tienen RLS sin política pública, así que el JOIN directo devolvería
+    // siempre 0. public_center_occupancy es SECURITY DEFINER y devuelve SOLO el conteo:
+    // permite calcular el aforo sin exponer ni una fila de datos de personas.
     const currentCapacityResult = await db.query(
-        `SELECT COALESCE(COUNT(fgm.person_id), 0) AS current_capacity
-         FROM FamilyGroupMembers fgm
-         JOIN FamilyGroups fg ON fg.family_id = fgm.family_id AND fg.status = 'activo'
-         JOIN CentersActivations ca ON ca.activation_id = fg.activation_id AND ca.ended_at IS NULL
-         WHERE ca.center_id = $1`,
+        `SELECT public_center_occupancy($1) AS current_capacity`,
         [centerId]
     );
     const currentCapacity = parseInt(currentCapacityResult.rows[0].current_capacity, 10);
@@ -476,17 +482,18 @@ export async function addInventoryItem(client: PoolClient, centerId: string, ite
     let productResult = await client.query('SELECT item_id FROM Products WHERE name ILIKE $1', [item.itemName.trim()]);
     let itemId;
     if (productResult.rowCount === 0) {
-        const newProduct = await client.query('INSERT INTO Products (name, category_id, unit) VALUES ($1, $2, $3) RETURNING item_id', [item.itemName.trim(), item.categoryId, item.unit]);
+        const newProduct = await client.query('INSERT INTO Products (name, category_id, unit, municipality_id) VALUES ($1, $2, $3, current_tenant()) RETURNING item_id', [item.itemName.trim(), item.categoryId, item.unit]);
         itemId = newProduct.rows[0].item_id;
     } else {
         itemId = productResult.rows[0].item_id;
     }
 
     const inventoryResult = await client.query(
-        `INSERT INTO CenterInventoryItems (center_id, item_id, quantity, updated_by) VALUES ($1, $2, $3, $4)
+        `INSERT INTO CenterInventoryItems (center_id, item_id, quantity, updated_by, municipality_id)
+         VALUES ($1, $2, $3, $4, (SELECT municipality_id FROM Centers WHERE center_id = $5))
          ON CONFLICT (center_id, item_id) DO UPDATE SET quantity = CenterInventoryItems.quantity + EXCLUDED.quantity, updated_at = NOW(), updated_by = EXCLUDED.updated_by
          RETURNING *`,
-        [centerId, itemId, item.quantity, item.userId]
+        [centerId, itemId, item.quantity, item.userId, centerId]
     );
 
     await client.query(`INSERT INTO InventoryLog (center_id, item_id, action_type, quantity, created_by, notes) VALUES ($1, $2, 'ADD', $3, $4, $5)`, [centerId, itemId, item.quantity, item.userId, item.notes]);

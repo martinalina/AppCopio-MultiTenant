@@ -148,6 +148,16 @@ async function importCenters(db: Db, rows: RawCenterRow[]): Promise<CSVUploadRes
   let created = 0, updated = 0, errors = 0; const detail: any[] = [];
   const client = db as any; // PoolClient-compatible
   await db.query("BEGIN");
+
+  // Los centros importados pertenecen a la comuna de quien sube el CSV. Se resuelve
+  // desde el contexto de tenant del request (lo fija withTenant), nunca desde el archivo.
+  const { rows: tenantRows } = await db.query("SELECT current_tenant() AS municipality_id");
+  const municipalityId: number | null = tenantRows[0]?.municipality_id ?? null;
+  if (municipalityId == null) {
+    await db.query("ROLLBACK");
+    throw { status: 403, message: "La sesión no tiene comuna asociada; no se pueden importar centros." };
+  }
+
   try {
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
@@ -200,7 +210,7 @@ async function importCenters(db: Db, rows: RawCenterRow[]): Promise<CSVUploadRes
 
       if (ex.rowCount === 0) {
         try {
-          await createCenter(client, body);
+          await createCenter(client, body, municipalityId);
           created++;
         } catch (createErr) {
           errors++;

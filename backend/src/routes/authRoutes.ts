@@ -51,16 +51,13 @@ const loginHandler: RequestHandler = async (req, res): Promise<void> => {
     const { username, password } = parsed.data;
     // console.log('✅ Validation passed for user:', username);
 
-    // Trae datos del usuario y el nombre del rol (equivale al role query del handler viejo)
-    const qUser = `
-      SELECT u.user_id, u.username, u.password_hash, u.is_active, u.role_id, u.es_apoyo_admin,
-         u.rut, u.email, u.nombre, u.genero, u.celular, u.imagen_perfil, u.created_at,
-         r.role_name
-      FROM Users u
-      LEFT JOIN Roles r ON r.role_id = u.role_id
-      WHERE u.username = $1
-    `;
-    const { rows } = await pool.query(qUser, [username]);
+    // Trae datos del usuario, su rol y su comuna.
+    //
+    // Se usa auth_lookup_user (SECURITY DEFINER) en vez de un SELECT directo sobre
+    // Users: /api/auth no puede pasar por withTenant, porque la comuna se conoce
+    // DESPUÉS de leer al usuario. Con RLS + FORCE sobre Users, un SELECT sin tenant
+    // seteado devuelve 0 filas y el login fallaría para todos.
+    const { rows } = await pool.query(`SELECT * FROM auth_lookup_user($1)`, [username]);
     const user = rows[0];
 
     // console.log('🔍 User query result:', user);
@@ -119,8 +116,11 @@ const loginHandler: RequestHandler = async (req, res): Promise<void> => {
       centersFromAssignments, //assignedCenters
       nombre: user.nombre,
       genero: user.genero,
-      celular: user.celular,   
-      imagen_perfil: user.imagen_perfil, 
+      celular: user.celular,
+      imagen_perfil: user.imagen_perfil,
+      municipality_id: user.municipality_id,
+      municipality_shortname: user.municipality_shortname,
+      municipality_name: user.municipality_name,
     };
 
     // JWTs reales (manteniendo tu flujo nuevo)
@@ -131,6 +131,8 @@ const loginHandler: RequestHandler = async (req, res): Promise<void> => {
       role_name: user.role_name,
       is_active: user.is_active,
       es_apoyo_admin: user.es_apoyo_admin,
+      municipality_id: user.municipality_id,
+      municipality_shortname: user.municipality_shortname,
     };
     const accessToken = signAccessToken(payload);
     const refreshToken = signRefreshToken(payload);
@@ -217,14 +219,19 @@ const refreshHandler: RequestHandler = async (req, res): Promise<void> => {
             [row.id]
         );
 
-        // Crear nuevos tokens (rotación)
+        // Crear nuevos tokens (rotación).
+        // municipality_id/shortname son OBLIGATORIOS acá: si el payload rotado los
+        // pierde, withTenant deja de poder resolver la comuna y el usuario queda sin
+        // acceso a sus datos apenas expira el access token (15 min por defecto).
         const newPayload: JwtUser = {
             user_id: payload.user_id,
             username: payload.username,
             role_id: payload.role_id,
             role_name: payload.role_name,
             is_active: payload.is_active,
-            es_apoyo_admin: payload.es_apoyo_admin
+            es_apoyo_admin: payload.es_apoyo_admin,
+            municipality_id: payload.municipality_id ?? null,
+            municipality_shortname: payload.municipality_shortname ?? null,
         };
         
         const newAccess = signAccessToken(newPayload);
@@ -283,30 +290,29 @@ const meHandler: RequestHandler = async (req, res) => {
     try {
         const payload = verifyAccessToken(token);
         
-        // Verificar que el usuario sigue activo
-        const { rows } = await pool.query(
-            `SELECT u.user_id, u.username, u.role_id, u.is_active, r.role_name
-             FROM Users u
-             LEFT JOIN Roles r ON r.role_id = u.role_id
-             WHERE u.user_id = $1`,
-            [payload.user_id]
-        );
-        
+        // Verificar que el usuario sigue activo.
+        // Mismo caso que el login: /auth/me no pasa por withTenant, así que va por la
+        // función SECURITY DEFINER en vez de leer Users directamente.
+        const { rows } = await pool.query(`SELECT * FROM auth_lookup_user_by_id($1)`, [payload.user_id]);
+
         const user = rows[0];
-        
+
         if (!user || !user.is_active) {
             res.status(401).json({ error: "User inactive or not found" });
             return;
         }
-        
-        res.json({ 
-            user: { 
-                user_id: user.user_id, 
-                username: user.username, 
+
+        res.json({
+            user: {
+                user_id: user.user_id,
+                username: user.username,
                 role_id: user.role_id,
                 role_name: user.role_name,
-                is_active: user.is_active
-            } 
+                is_active: user.is_active,
+                municipality_id: user.municipality_id,
+                municipality_shortname: user.municipality_shortname,
+                municipality_name: user.municipality_name
+            }
         });
     } catch (error: any) {
         if (error.name === 'TokenExpiredError') {

@@ -21,8 +21,8 @@ export async function getTemplateDB(db: Db, template_id: string) : Promise<Templ
 
 export async function createTemplateDB(db: Db, userId: number, args: { name: string; description: string | null; is_public: boolean; }) : Promise<Template> {
   const { rows } = await db.query(
-    `INSERT INTO Templates (name, description, is_public, created_by)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO Templates (name, description, is_public, created_by, municipality_id)
+     VALUES ($1, $2, $3, $4, current_tenant())
      RETURNING template_id, name, description, is_public, created_by, created_at`,
     [args.name, args.description, args.is_public, userId]
   );

@@ -107,8 +107,8 @@ export async function createEntryMovement(db: Pool, data: MovementCreateData): P
             if (!item_id) {
                 // Primero crear el producto
                 const createProductQuery = `
-                    INSERT INTO Products (name, category_id, unit)
-                    VALUES ($1, $2, $3)
+                    INSERT INTO Products (name, category_id, unit, municipality_id)
+                    VALUES ($1, $2, $3, current_tenant())
                     RETURNING item_id
                 `;
                 
@@ -122,15 +122,16 @@ export async function createEntryMovement(db: Pool, data: MovementCreateData): P
                 
                 // Luego crear la entrada en el inventario del centro
                 const createInventoryQuery = `
-                    INSERT INTO CenterInventoryItems (center_id, item_id, quantity, updated_by)
-                    VALUES ($1, $2, $3, $4)
+                    INSERT INTO CenterInventoryItems (center_id, item_id, quantity, updated_by, municipality_id)
+                    VALUES ($1, $2, $3, $4, (SELECT municipality_id FROM Centers WHERE center_id = $5))
                 `;
                 
                 await client.query(createInventoryQuery, [
                     data.center_id,
                     item_id,
                     item.quantity,
-                    data.user_id
+                    data.user_id,
+                    data.center_id
                 ]);
             } else {
                 // Item existe, incrementar cantidad

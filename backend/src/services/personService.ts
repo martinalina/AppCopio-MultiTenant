@@ -53,8 +53,8 @@ export async function getPersonById(db: Db, id: number): Promise<Person | null> 
 export async function createPersonDB(db: Db, p: FibePersonData): Promise<number> {
     const sql = `
         INSERT INTO Persons ( rut, nombre, primer_apellido, segundo_apellido, nacionalidad, genero, edad, 
-        estudia, trabaja, perdida_trabajo, rubro, discapacidad, dependencia)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        estudia, trabaja, perdida_trabajo, rubro, discapacidad, dependencia, municipality_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, current_tenant())
         RETURNING person_id`;
 
     const params = [

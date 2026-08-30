@@ -2,7 +2,8 @@
 import { Router, RequestHandler } from "express";
 import pool from "../config/db";
 import { requireUser } from "../auth/requireUser";
-import { requireAuth } from "../auth/middleware";
+import { requireAuth, optionalAuth } from "../auth/middleware";
+import { withTenant, withTenantOrPublic } from "../auth/tenantContext";
 import { 
   createServiceRequest, listServiceRequests, getServiceRequestById, updateServiceRequest, deleteServiceRequest,
   listPublicServiceRequests, getPublicServiceRequestById, 
@@ -293,13 +294,13 @@ const deleteRequest: RequestHandler = async (req, res) => {
   }
 };
 
-router.get("/public/list", listPublicRequests);
-router.get("/public/:requestId", getPublicRequest);
+router.get("/public/list", optionalAuth, withTenantOrPublic, listPublicRequests);
+router.get("/public/:requestId", optionalAuth, withTenantOrPublic, getPublicRequest);
 // ----------------------------------------------------------------
-router.post("/", requireAuth, createRequest);
-router.get("/", requireAuth, listInternalRequests);
-router.get("/:requestId", requireAuth, getInternalRequest);
-router.patch("/:requestId", requireAuth, updateRequest);
-router.delete("/:requestId", requireAuth, deleteRequest);
+router.post("/", requireAuth, withTenant, createRequest);
+router.get("/", requireAuth, withTenant, listInternalRequests);
+router.get("/:requestId", requireAuth, withTenant, getInternalRequest);
+router.patch("/:requestId", requireAuth, withTenant, updateRequest);
+router.delete("/:requestId", requireAuth, withTenant, deleteRequest);
 
 export default router;

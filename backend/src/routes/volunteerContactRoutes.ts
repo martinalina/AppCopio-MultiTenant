@@ -2,7 +2,8 @@
 import { Router, RequestHandler } from 'express';
 import pool from '../config/db';
 import { requireUser } from "../auth/requireUser";
-import { requireAuth } from '../auth/middleware';
+import { requireAuth, optionalAuth } from '../auth/middleware';
+import { withTenant, withTenantOrPublic } from '../auth/tenantContext';
 
 // CAMBIO: Importamos las funciones desde el servicio
 import {
@@ -278,11 +279,11 @@ const updateVolunteer: RequestHandler = async (req, res) => {
 // =================================================================
 
 // Ruta pública para el formulario de contacto
-router.post('/contact', submitVolunteerContact);
+router.post('/contact', optionalAuth, withTenantOrPublic, submitVolunteerContact);
 
 // Rutas protegidas (requieren autenticación)
-router.get('/by-activation/:activationId', requireAuth, listVolunteersByActivation);
-router.get('/:volunteerId', requireAuth, getVolunteer);
-router.patch('/:volunteerId/status', requireAuth, updateVolunteer);
+router.get('/by-activation/:activationId', requireAuth, withTenant, listVolunteersByActivation);
+router.get('/:volunteerId', requireAuth, withTenant, getVolunteer);
+router.patch('/:volunteerId/status', requireAuth, withTenant, updateVolunteer);
 
 export default router;
