@@ -14,7 +14,7 @@ type AuthContextState = {
   user: User | null;
   isAuthenticated: boolean;
   loadingAuth: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<User>;
   logout: () => Promise<void>;
   refreshToken: () => Promise<boolean>;
 };
@@ -103,6 +103,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data.refresh_token) {
         localStorage.setItem(STORAGE_REFRESH_TOKEN_KEY, data.refresh_token);
       }
+
+      // Se devuelve para que quien llame pueda decidir el destino según el rol.
+      return data.user;
     } catch (e: any) {
       const msg =
         e?.response?.data?.message ||

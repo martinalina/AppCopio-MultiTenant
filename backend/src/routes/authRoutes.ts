@@ -141,9 +141,11 @@ const loginHandler: RequestHandler = async (req, res): Promise<void> => {
     const tokenHash = crypto.createHash("sha256").update(refreshToken).digest("hex");
     const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * Number(process.env.REFRESH_TOKEN_TTL_DAYS));
 
+    // RefreshTokens está sellada con RLS sin políticas permisivas: solo se llega
+    // por estas funciones SECURITY DEFINER. Ninguna consulta SQL de la aplicación
+    // puede tocar la tabla, ni por error ni por inyección.
     await pool.query(
-      `INSERT INTO RefreshTokens (user_id, token_hash, user_agent, ip, expires_at)
-       VALUES ($1,$2,$3,$4,$5)`,
+      `SELECT refresh_token_issue($1, $2, $3, $4, $5)`,
       [user.user_id, tokenHash, req.headers["user-agent"] || null, getClientIp(req), expiresAt]
     );
     res.setHeader("Cache-Control", "no-store");
@@ -183,9 +185,7 @@ const refreshHandler: RequestHandler = async (req, res): Promise<void> => {
 
         // Buscar el token en la base de datos
         const { rows } = await pool.query(
-            `SELECT id, user_id, expires_at, revoked_at
-             FROM RefreshTokens
-             WHERE user_id=$1 AND token_hash=$2`,
+            `SELECT * FROM refresh_token_find($1, $2)`,
             [payload.user_id, tokenHash]
         );
         
@@ -212,12 +212,7 @@ const refreshHandler: RequestHandler = async (req, res): Promise<void> => {
 
         // ✅ REVOCAR EL TOKEN ACTUAL ANTES DE CREAR UNO NUEVO
         // console.log('[Refresh] 🔄 Revocando token anterior...');
-        await pool.query(
-            `UPDATE RefreshTokens 
-             SET revoked_at = now() 
-             WHERE id = $1`,
-            [row.id]
-        );
+        await pool.query(`SELECT refresh_token_revoke_by_id($1)`, [row.id]);
 
         // Crear nuevos tokens (rotación).
         // municipality_id/shortname son OBLIGATORIOS acá: si el payload rotado los
@@ -241,8 +236,7 @@ const refreshHandler: RequestHandler = async (req, res): Promise<void> => {
 
         // Insertar el nuevo token
         await pool.query(
-            `INSERT INTO RefreshTokens (user_id, token_hash, user_agent, ip, expires_at)
-             VALUES ($1, $2, $3, $4, $5)`,
+            `SELECT refresh_token_issue($1, $2, $3, $4, $5)`,
             [payload.user_id, newHash, req.headers["user-agent"] || null, getClientIp(req), expiresAt]
         );
         
@@ -272,7 +266,7 @@ const logoutHandler: RequestHandler = async (req, res): Promise<void> => {
     const token = (req as any).cookies?.refresh;
     if (token) {
         const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-        await pool.query(`UPDATE RefreshTokens SET revoked_at = now() WHERE token_hash=$1`, [tokenHash]);
+        await pool.query(`SELECT refresh_token_revoke_by_hash($1)`, [tokenHash]);
     }
     res.clearCookie("refresh", cookieOpts()).json({ ok: true });
 };

@@ -771,6 +771,17 @@ VALUES
 ('VALPO-C003', 1, 'Activación preventiva por alerta meteorológica en Playa Ancha.');
 
 
+-- Necesidades declaradas por los centros vinculados a la emergencia 1. Son lo que el
+-- tablero intercomunal muestra a las otras comunas participantes: sin prioridades
+-- sembradas no hay nada que priorizar ni con qué colorear el mapa.
+-- VALPO-C001 queda con urgencia alta y VALPO-C002 sin prioridades, para poder ver los
+-- dos extremos de la escala.
+INSERT INTO CenterItemPriority (center_id, item_id, priority, updated_by) VALUES
+('VALPO-C001', 1, 'alto',  1),   -- Agua embotellada
+('VALPO-C001', 2, 'medio', 1),   -- Frazadas
+('VALPO-C001', 4, 'bajo',  1);   -- Pañales
+
+
 -- Sincroniza bandera redundante is_active según activaciones vigentes
 UPDATE Centers c
 SET is_active = EXISTS (
@@ -896,8 +907,19 @@ VALUES (1, 'Incendio forestal Valparaíso 2024', 'incendio',
         (SELECT user_id FROM Users WHERE username = 'superadmin'), NULL);
 SELECT setval('emergencies_emergency_id_seq', (SELECT MAX(emergency_id) FROM Emergencies));
 
-INSERT INTO EmergencyParticipants (emergency_id, municipality_id) VALUES
-(1, 1), (1, 2), (1, 3), (1, 4);
+-- Valparaíso y Viña ya participan; Quilpué queda INVITADA (pendiente de responder) y
+-- Concón sin fila. Así el flujo de invitación se puede probar de punta a punta desde el
+-- primer arranque, y sirve para verificar que una comuna invitada todavía NO ve las
+-- prioridades ajenas.
+INSERT INTO EmergencyParticipants (emergency_id, municipality_id, status, invited_by) VALUES
+(1, 1, 'participando', NULL),
+(1, 2, 'participando', NULL),
+(1, 3, 'invitada', (SELECT user_id FROM Users WHERE username = 'superadmin'));
+
+-- La notificación en pantalla de esta invitación NO se siembra aquí: los usuarios de
+-- Quilpué se crean más abajo en este mismo archivo, así que el SELECT del destinatario
+-- devolvía NULL y el aviso terminaba visible para toda la comuna. Vive en
+-- 005_datos_validacion.sql, que corre cuando ya existen todos los usuarios.
 
 -- Dos de las tres activaciones de Valparaíso se cuelgan de la emergencia; la tercera
 -- queda local (emergency_id NULL) para ejercitar ambos caminos.

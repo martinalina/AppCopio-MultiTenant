@@ -27,6 +27,7 @@ import {requireAuth} from "./auth/middleware";
 import { withTenant } from "./auth/tenantContext";
 import municipalityRoutes from "./routes/municipalityRoutes";
 import emergencyRoutes from "./routes/emergencyRoutes";
+import crossSupportRoutes from "./routes/crossSupportRoutes";
 import csvRoutes from "./routes/csvRoutes";
 
 import databaseRoutes from "./routes/databaseRoutes";
@@ -140,6 +141,7 @@ app.use('/api/volunteers', volunteerRoutes);
 app.use('/api/service-request', serviceRequestRoutes);
 app.use('/api/municipalities', requireAuth, withTenant, municipalityRoutes); // solo Super Administrador
 app.use('/api/emergencies', requireAuth, withTenant, emergencyRoutes);
+app.use('/api/cross-support', requireAuth, withTenant, crossSupportRoutes);
 
 /** Middleware de errores (último siempre) */
 app.use((err: any, req: Request, res: Response, next: NextFunction): void => {

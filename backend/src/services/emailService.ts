@@ -47,7 +47,7 @@ export async function prepareEmail(db: Db,  notif: CenterNotification) : Promise
       <hr style="border:none;border-top:1px solid #e5e5e5;margin:16px 0" />
       <p style="font-size:12px;color:#666">
         — AppCopio<br/>
-        Notificación del centro: <strong>${escapeHtml(notif.center_id)} - ${escapeHtml(center_name)}</strong>
+        Notificación del centro: <strong>${escapeHtml(notif.center_id ?? "")} - ${escapeHtml(center_name)}</strong>
       </p>
     </div>
   `;

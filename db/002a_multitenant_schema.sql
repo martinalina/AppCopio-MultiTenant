@@ -145,7 +145,7 @@ CREATE UNIQUE INDEX categories_name_tenant_uq ON Categories (name, municipality_
 
 CREATE UNIQUE INDEX products_name_global_uq ON Products (name) WHERE municipality_id IS NULL;
 CREATE UNIQUE INDEX products_name_tenant_uq ON Products (name, municipality_id) WHERE municipality_id IS NOT NULL;
-
+      
 -- ----------------------------------------------------------
 -- 5. center_id se genera con prefijo de comuna (SHORTNAME-C00X),
 --    reiniciando el correlativo en cada comuna.

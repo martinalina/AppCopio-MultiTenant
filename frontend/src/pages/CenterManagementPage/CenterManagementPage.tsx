@@ -8,6 +8,7 @@ import { Center } from "@/types/center";
 import { listCenters, updateCenterStatus, deleteCenter } from "@/services/centers.service";
 import { getOmzZoneForCenter } from "@/services/zones.service";
 import Papa from "papaparse";
+import { Snackbar, Alert } from "@mui/material";
 import { saveAs } from "file-saver";
 import { listPeopleByCenter } from "@/services/residents.service";
 import { listCenterInventory } from "@/services/inventory.service";
@@ -67,7 +68,7 @@ const utf16leArrayBuffer = (text: string) => {
 
 const StatusSwitch: React.FC<{
   center: Center;
-  onToggle: (id: string, isActive: boolean, options?: { notes?: string; assignedUserId?: number }) => void;
+  onToggle: (id: string, isActive: boolean, options?: { notes?: string; assignedUserIds?: number[]; emergencyId?: number | null }) => void;
   disabled: boolean;
 }> = ({ center, onToggle, disabled }) => {
   const [showActivateDialog, setShowActivateDialog] = useState(false);
@@ -84,7 +85,7 @@ const StatusSwitch: React.FC<{
     }
   };
 
-const handleConfirmActivation = async (data: { notes: string; assignedUserIds: number[] }) => {
+const handleConfirmActivation = async (data: { notes: string; assignedUserIds: number[]; emergencyId?: number | null }) => {
     await onToggle(center.center_id, true, data);
     setShowActivateDialog(false);
   };
@@ -115,6 +116,8 @@ const handleConfirmActivation = async (data: { notes: string; assignedUserIds: n
 
 const CenterManagementPage: React.FC = () => {
   useScrollToTop({ behavior: 'smooth' });
+  // Aviso con la UI del sistema en vez del alert() nativo del navegador.
+  const [aviso, setAviso] = useState<{ tipo: "success" | "error"; texto: string } | null>(null);
   const { user, loadingAuth: isAuthLoading } = useAuth();
   const navigate = useNavigate();
 
@@ -194,7 +197,7 @@ const CenterManagementPage: React.FC = () => {
   const handleToggleActive = async (
     centerId: string, 
     isActive: boolean, 
-    options?: { notes?: string; assignedUserId?: number }
+    options?: { notes?: string; assignedUserIds?: number[]; emergencyId?: number | null }
   ) => {
     if (!user) return;
 
@@ -206,10 +209,16 @@ const CenterManagementPage: React.FC = () => {
       await fetchCenters(false);
       
       // Mostrar mensaje de éxito
-      alert(isActive ? 'Centro activado correctamente' : 'Centro desactivado correctamente');
+      setAviso({
+        tipo: "success",
+        texto: isActive ? 'Centro activado correctamente.' : 'Centro desactivado correctamente.',
+      });
     } catch (error: any) {
       console.error('Error al cambiar estado del centro:', error);
-      alert(error?.message || 'Error al cambiar el estado del centro');
+      setAviso({
+        tipo: "error",
+        texto: error?.response?.data?.message || error?.message || 'No se pudo cambiar el estado del centro.',
+      });
     }
   };
 
@@ -441,6 +450,22 @@ const CenterManagementPage: React.FC = () => {
 
   return (
     <div className="center-management-container">
+      <Snackbar
+        open={!!aviso}
+        autoHideDuration={5000}
+        onClose={() => setAviso(null)}
+        anchorOrigin={{ vertical: "top", horizontal: "center" }}
+      >
+        <Alert
+          severity={aviso?.tipo ?? "success"}
+          variant="filled"
+          onClose={() => setAviso(null)}
+          sx={{ width: "100%" }}
+        >
+          {aviso?.texto}
+        </Alert>
+      </Snackbar>
+
       <div className="centers-header">
         <h1 className="ds-titlePage">Gestión de Centros y Albergues</h1>
         {(user?.es_apoyo_admin || (user as any)?.role_id === 1) === true && (

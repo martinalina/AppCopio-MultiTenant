@@ -3,13 +3,32 @@ import { api } from "@/lib/api";
 
 export type NotificationStatus = 'queued' | 'sent' | 'failed';
 
+/**
+ * Clase de aviso. Tres avisos distintos comparten forma —invitación de comuna,
+ * invitación de centro y ofrecimiento de apoyo—, así que deducirla de qué campos
+ * vienen llenos llevaba a enlaces y diálogos equivocados. La columna la fija el
+ * backend; puede venir null en filas antiguas.
+ */
+export type NotificationKind =
+  | 'emergency_invitation'
+  | 'activation_invitation'
+  | 'support_offer'
+  | 'volunteer_contact';
+
 export interface CenterNotification {
   notification_id: string;
   title: string;
   message: string;
   event_at: string;
-  center_id: string;
+  /** null cuando la notificación va dirigida a la comuna y no a un centro. */
+  center_id: string | null;
   center_name?: string;
+  municipality_id?: number | null;
+  /** Si viene, es una invitación a esa emergencia. */
+  emergency_id?: number | null;
+  kind?: NotificationKind | null;
+  emergency_name?: string | null;
+  emergency_ended_at?: string | null;
   activation_id?: number | null;
   destinatary_id?: number | null;
   destinatary_name: string | null;

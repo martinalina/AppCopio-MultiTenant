@@ -12,9 +12,11 @@ import {
   Typography,
   Chip,
   Box,
+  MenuItem,
 } from "@mui/material";
 import { listActiveUsersByRole } from "@/services/users.service";
 import type { User } from "@/types/user";
+import { listEmergencies, type Emergency } from "@/services/superadmin.service";
 
 interface ActivateCenterDialogProps {
   open: boolean;
@@ -24,6 +26,7 @@ interface ActivateCenterDialogProps {
   defaultManagerId?: number | null;
   onConfirm: (data: { 
     notes: string; 
+    emergencyId?: number | null;
     assignedUserIds: number[];  // ← CAMBIO: Array en vez de singular
   }) => Promise<void>;
 }
@@ -45,12 +48,36 @@ export default function ActivateCenterDialog({
   onConfirm,
 }: ActivateCenterDialogProps) {
   const [notes, setNotes] = React.useState("");
+  // Emergencias vigentes en las que la comuna YA participa. Vincular es opcional:
+  // una activación local (un derrumbe, un sector puntual) no necesita ninguna.
+  const [emergencias, setEmergencias] = React.useState<Emergency[]>([]);
+  // MUI trata value="" como "sin selección" y deja el campo en blanco, así que
+  // "sin emergencia" necesita un valor propio (0) para verse elegido.
+  const SIN_EMERGENCIA = 0;
+  const [emergencyId, setEmergencyId] = React.useState<number>(SIN_EMERGENCIA);
   const [assignedUsers, setAssignedUsers] = React.useState<User[]>([]);  // ← CAMBIO: Array
   const [availableUsers, setAvailableUsers] = React.useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
 
   // Cargar usuarios disponibles
+  // Al abrir, trae las emergencias vigentes donde la comuna ya participa: son las
+  // únicas a las que el backend permite colgar una activación.
+  React.useEffect(() => {
+    if (!open) return;
+    let vivo = true;
+    (async () => {
+      try {
+        const todas = await listEmergencies();
+        if (!vivo) return;
+        setEmergencias(todas.filter((e) => !e.ended_at && e.mi_estado === "participando"));
+      } catch {
+        if (vivo) setEmergencias([]);
+      }
+    })();
+    return () => { vivo = false; };
+  }, [open]);
+
   React.useEffect(() => {
     if (!open) return;
 
@@ -114,6 +141,7 @@ export default function ActivateCenterDialog({
       setSaving(true);
       await onConfirm({
         notes: notes.trim(),
+        emergencyId: emergencyId === SIN_EMERGENCIA ? null : emergencyId,
         assignedUserIds: assignedUsers.map(u => u.user_id),  // ← CAMBIO: Array de IDs
       });
       onClose();
@@ -170,6 +198,34 @@ export default function ActivateCenterDialog({
               required
             />
           </Box>
+
+          {/* Emergencia (opcional) */}
+          {emergencias.length > 0 && (
+            <Box>
+              <Typography variant="subtitle2" fontWeight={600} gutterBottom>
+                Emergencia asociada (opcional)
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Si vinculas esta activación a una emergencia, las demás comunas participantes
+                podrán ver las prioridades de este centro. Déjalo vacío para un evento local.
+              </Typography>
+              <TextField
+                select
+                fullWidth
+                size="small"
+                sx={{ mt: 1 }}
+                value={emergencyId}
+                onChange={(e) => setEmergencyId(Number(e.target.value))}
+              >
+                <MenuItem value={SIN_EMERGENCIA}>Sin emergencia (evento local)</MenuItem>
+                {emergencias.map((em) => (
+                  <MenuItem key={em.emergency_id} value={em.emergency_id}>
+                    {em.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Box>
+          )}
 
           {/* Sección 2: Encargados - CAMBIO PRINCIPAL */}
           <Box>

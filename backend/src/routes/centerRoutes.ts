@@ -1,7 +1,7 @@
 // src/routes/centerRoutes.ts
 import { Router, RequestHandler } from 'express';
 import pool from '../config/db';
-import { requireUser, requireTenant } from "../auth/requireUser";
+import { requireUser, requireTenant, SUPERADMIN_ROLE_ID } from "../auth/requireUser";
 
 // CAMBIO: Importamos TODAS las funciones necesarias desde nuestro servicio, incluyendo las de inventario.
 import {
@@ -47,8 +47,15 @@ const router = Router();
 // =================================================================
 
 const listCenters: RequestHandler = async (req, res) => {
-    console.log('listCenters called');
     try {
+        // El Super Administrador solo administra municipalidades: no debe ver centros,
+        // ni siquiera de solo lectura. RLS lo dejaría pasar (is_superadmin() en la
+        // política de Centers existe para that: consultas administrativas puntuales,
+        // como el conteo de MunicipalityDetailPage), así que la restricción va acá.
+        if (req.user?.role_id === SUPERADMIN_ROLE_ID) {
+            res.json([]);
+            return;
+        }
         const centers = await getAllCenters(pool);
         res.json(centers);
     } catch (error) {
@@ -159,12 +166,41 @@ const deleteCenter: RequestHandler = async (req, res) => {
 // =================================================================
 
 const setActivationStatus: RequestHandler = async (req, res) => {
-    const { isActive, notes, assignedUserId } = req.body;
+    const { isActive, notes, assignedUserId, emergency_id } = req.body;
     const userId = requireUser(req).user_id;
     
     if (typeof isActive !== 'boolean') {
         res.status(400).json({ error: 'Se requiere el campo "isActive" (boolean).' });
         return;
+    }
+
+    // La emergencia es opcional: una activación local no necesita ninguna. Si viene,
+    // debe estar vigente y la comuna debe haber ACEPTADO participar; de lo contrario
+    // se estaría compartiendo información con una emergencia ajena.
+    let emergencyId: number | null = null;
+    if (isActive && emergency_id != null) {
+        emergencyId = Number(emergency_id);
+        if (!Number.isFinite(emergencyId)) {
+            res.status(400).json({ error: 'emergency_id inválido.' });
+            return;
+        }
+        const { rows } = await pool.query(
+            `SELECT e.emergency_id
+               FROM Emergencies e
+               JOIN EmergencyParticipants ep
+                 ON ep.emergency_id = e.emergency_id
+                AND ep.municipality_id = current_tenant()
+                AND ep.status = 'participando'
+              WHERE e.emergency_id = $1 AND e.ended_at IS NULL`,
+            [emergencyId]
+        );
+        if (rows.length === 0) {
+            res.status(400).json({
+                error: 'EMERGENCIA_NO_DISPONIBLE',
+                message: 'La emergencia no está vigente o tu comuna no participa en ella.',
+            });
+            return;
+        }
     }
 
     const client = await pool.connect();
@@ -177,7 +213,8 @@ const setActivationStatus: RequestHandler = async (req, res) => {
             isActive, 
             userId,
             notes,
-            assignedUserId
+            assignedUserId,
+            emergencyId
         );
         
         if (!updatedCenter) {

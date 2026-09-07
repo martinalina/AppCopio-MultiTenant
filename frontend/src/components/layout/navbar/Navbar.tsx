@@ -36,6 +36,8 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import LocationCityIcon from "@mui/icons-material/LocationCity";
+import CampaignIcon from "@mui/icons-material/Campaign";
+import HandshakeIcon from "@mui/icons-material/Handshake";
 import VerifiedUserIcon from "@mui/icons-material/VerifiedUser";
 import LoginIcon from "@mui/icons-material/Login";
 import MenuIcon from "@mui/icons-material/Menu";
@@ -381,12 +383,44 @@ export default function VerticalNavbar() {
                   isCollapsed={false}
                   onClick={handleNavItemClick}
                 />
+                <NavItem
+                  to={paths.emergencies}
+                  icon={<CampaignIcon />}
+                  label="Emergencias"
+                  isCollapsed={false}
+                  onClick={handleNavItemClick}
+                />
+                <NavItem
+                  to={paths.intermunicipalBoard}
+                  icon={<HandshakeIcon />}
+                  label="Apoyo intercomunal"
+                  isCollapsed={false}
+                  onClick={handleNavItemClick}
+                />
               </List>
             </Collapse>
           </>
         )}
 
-
+        {/* Super Administracion: no tiene comuna, asi que no ve los menus municipales. */}
+        {isSuperAdmin(user) && (
+          <>
+            <NavItem
+              to={paths.superadmin.municipalities}
+              icon={<LocationCityIcon />}
+              label="Municipalidades"
+              isCollapsed={isCollapsed}
+              onClick={handleNavItemClick}
+            />
+            <NavItem
+              to={paths.superadmin.emergencies}
+              icon={<CampaignIcon />}
+              label="Emergencias"
+              isCollapsed={isCollapsed}
+              onClick={handleNavItemClick}
+            />
+          </>
+        )}
 
       </List>
 

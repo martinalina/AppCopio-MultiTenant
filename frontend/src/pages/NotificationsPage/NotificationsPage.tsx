@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { Bell, RefreshCw, ExternalLink, Check } from 'lucide-react';
 import { listUserNotifications, CenterNotification, markNotificationAsRead } from "@/services/notifications.service";
 import { Link } from "react-router-dom";
+import { destinoDeNotificacion, etiquetaDeDestino } from "./destinoDeNotificacion";
 import "./NotificationsPage.css";
 
 const NotificationsPage: React.FC = () => {
@@ -230,19 +231,41 @@ const NotificationsPage: React.FC = () => {
                                     </p>
                                     
                                     <div className="notification-footer">
+                                        {/* Las notificaciones de comuna (invitaciones a emergencia) no
+                                            tienen centro: enlazarlas a /center/null/details rompía la vista. */}
                                         <div className="center-info">
-                                            <span className="center-label">Centro:</span>
-                                            <span className="center-name">{notification.center_id}</span>
+                                            {notification.center_id ? (
+                                                <>
+                                                    <span className="center-label">Centro:</span>
+                                                    <span className="center-name">{notification.center_id}</span>
+                                                </>
+                                            ) : notification.emergency_name ? (
+                                                <>
+                                                    <span className="center-label">Emergencia:</span>
+                                                    <span className="center-name">{notification.emergency_name}</span>
+                                                </>
+                                            ) : (
+                                                <span className="center-label">Aviso de la comuna</span>
+                                            )}
                                         </div>
-                                        
-                                        <Link 
-                                            to={`/center/${notification.center_id}/details`}
-                                            className="go-to-center-btn"
-                                            onClick={(e) => e.stopPropagation()}
-                                        >
-                                            Ver detalles
-                                            <ExternalLink size={14} />
-                                        </Link>
+
+                                        {(() => {
+                                            // El destino depende de la CLASE de aviso, no de qué
+                                            // campos vengan llenos: la oferta de apoyo trae centro
+                                            // pero se atiende en la bandeja de ofertas.
+                                            const destino = destinoDeNotificacion(notification);
+                                            if (!destino) return null;
+                                            return (
+                                                <Link
+                                                    to={destino}
+                                                    className="go-to-center-btn"
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    {etiquetaDeDestino(notification)}
+                                                    <ExternalLink size={14} />
+                                                </Link>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                             </div>

@@ -160,17 +160,19 @@ export async function updateActivationStatus(client: PoolClient,
     isActive: boolean, 
     userId: number, 
     notes?: string, 
-    assignedUserId?: number) {
+    assignedUserId?: number,
+    /** Emergencia a la que se cuelga esta activación. null = incidente local. */
+    emergencyId?: number | null) {
     const centerResult = await client.query('UPDATE Centers SET is_active = $1, updated_at = NOW() WHERE center_id = $2 RETURNING *', [isActive, id]);
     if (centerResult.rowCount === 0) return null;
 
     if (isActive) {
         const activationNotes = notes || 'Activación del centro.';
             const { rows: activationRows } = await client.query(
-                `INSERT INTO CentersActivations (center_id, activated_by, notes, municipality_id)
-                 VALUES ($1, $2, $3, (SELECT municipality_id FROM Centers WHERE center_id = $4))
+                `INSERT INTO CentersActivations (center_id, activated_by, notes, municipality_id, emergency_id)
+                 VALUES ($1, $2, $3, (SELECT municipality_id FROM Centers WHERE center_id = $4), $5)
                  RETURNING activation_id`,
-                [id, userId, activationNotes, id]
+                [id, userId, activationNotes, id, emergencyId ?? null]
             );
             
             const activationId = activationRows[0].activation_id;

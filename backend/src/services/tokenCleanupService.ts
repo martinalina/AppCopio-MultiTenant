@@ -9,17 +9,11 @@ export async function cleanupExpiredTokens(): Promise<void> {
   try {
     // console.log('[TokenCleanup] 🧹 Iniciando limpieza de tokens expirados...');
     
-    const result = await pool.query(`
-      DELETE FROM RefreshTokens
-      WHERE 
-        -- Tokens que ya expiraron hace más de 1 día
-        (expires_at < NOW() - INTERVAL '1 day')
-        OR
-        -- Tokens revocados hace más de 7 días
-        (revoked_at IS NOT NULL AND revoked_at < NOW() - INTERVAL '7 days')
-    `);
+    // RefreshTokens está sellada con RLS sin políticas permisivas: el criterio de
+    // purga vive dentro de la función SECURITY DEFINER, que es la única vía de acceso.
+    const result = await pool.query(`SELECT refresh_token_purge() AS deleted`);
     
-    const deletedCount = result.rowCount || 0;
+    const deletedCount = Number(result.rows[0]?.deleted ?? 0);
     
     if (deletedCount > 0) {
       // console.log(`[TokenCleanup] ✅ Eliminados ${deletedCount} tokens obsoletos`);
@@ -55,14 +49,9 @@ export async function revokeAllUserTokens(userId: number): Promise<void> {
   try {
     // console.log(`[TokenCleanup] 🔒 Revocando todos los tokens del usuario ${userId}...`);
     
-    const result = await pool.query(
-      `UPDATE RefreshTokens 
-       SET revoked_at = NOW() 
-       WHERE user_id = $1 AND revoked_at IS NULL`,
-      [userId]
-    );
+    const result = await pool.query(`SELECT refresh_token_revoke_all($1) AS revoked`, [userId]);
     
-    const revokedCount = result.rowCount || 0;
+    const revokedCount = Number(result.rows[0]?.revoked ?? 0);
     // console.log(`[TokenCleanup] ✅ Revocados ${revokedCount} tokens del usuario ${userId}`);
     
   } catch (error) {
@@ -81,14 +70,7 @@ export async function getTokenStats(): Promise<{
   revoked: number;
 }> {
   try {
-    const result = await pool.query(`
-      SELECT 
-        COUNT(*) as total,
-        COUNT(*) FILTER (WHERE expires_at > NOW() AND revoked_at IS NULL) as active,
-        COUNT(*) FILTER (WHERE expires_at <= NOW()) as expired,
-        COUNT(*) FILTER (WHERE revoked_at IS NOT NULL) as revoked
-      FROM RefreshTokens
-    `);
+    const result = await pool.query(`SELECT * FROM refresh_token_stats()`);
     
     return {
       total: parseInt(result.rows[0].total),

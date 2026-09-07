@@ -336,6 +336,8 @@ export async function updateCenterStatus(
   options?: {
     notes?: string;
     assignedUserIds?: number[];  // ← CAMBIO: Ahora es array
+    /** Emergencia vigente a la que se cuelga esta activación. Omitir = incidente local. */
+    emergencyId?: number | null;
   },
   signal?: AbortSignal
 ) {
@@ -351,6 +353,11 @@ export async function updateCenterStatus(
       // y los demás los asignaremos después
       if (options.assignedUserIds && options.assignedUserIds.length > 0) {
         payload.assignedUserId = options.assignedUserIds[0];
+      }
+
+      // El backend valida que la emergencia esté vigente y que la comuna participe.
+      if (options.emergencyId != null) {
+        payload.emergency_id = options.emergencyId;
       }
     }
 

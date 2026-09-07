@@ -2,6 +2,8 @@
 import * as React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
+import { isSuperAdmin } from "@/utils/authz";
+import { paths } from "@/routes/paths";
 import { msgFromError } from "@/lib/errors"; 
 import "./LoginPage.css";
 
@@ -35,8 +37,11 @@ export default function LoginPage() {
     setError("");
 
     try {
-      await login(u, p);
-      navigate(from, { replace: true });
+      const usuario = await login(u, p);
+      // El Super Administrador no pertenece a ninguna comuna: mandarlo a una pantalla
+      // municipal (o devolverlo a la que intentó abrir) lo dejaría viendo datos que no
+      // le corresponden.
+      navigate(isSuperAdmin(usuario) ? paths.superadmin.municipalities : from, { replace: true });
     } catch (err: any) {
       setError(msgFromError?.(err) || err?.message || "Credenciales inválidas.");
     } finally {

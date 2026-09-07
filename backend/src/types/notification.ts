@@ -1,8 +1,19 @@
 export type NotificationStatus = 'queued' | 'sent' | 'failed';
 
+/**
+ * Clase de aviso. Sin esto la UI tenía que deducirla de qué campos venían llenos, y
+ * tres avisos distintos comparten forma (ver centernotif_kind_chk en 002b).
+ */
+export type NotificationKind =
+  | 'emergency_invitation'
+  | 'activation_invitation'
+  | 'support_offer'
+  | 'volunteer_contact';
+
 export type CenterNotification = {
   notification_id: string;
-  center_id: string;
+  /** null cuando la notificación va dirigida a una comuna y no a un centro. */
+  center_id: string | null;
   center_name: string;
   activation_id: number | null;
   destinatary_id: number | null;
@@ -17,16 +28,26 @@ export type CenterNotification = {
   error: string | null;
   created_at: string;
   updated_at: string | null;
+  /** Destino municipal (invitaciones a emergencias y avisos de comuna). */
+  municipality_id?: number | null;
+  /** Si viene, la UI ofrece aceptar/rechazar la invitación a esa emergencia. */
+  emergency_id?: number | null;
+  /** Clase de aviso: decide a dónde enlaza y qué UI lo atiende. */
+  kind?: NotificationKind | null;
 }
 
 export type CreateNotificationInput = {
-  center_id: string;
+  /** Uno de los dos destinos es obligatorio (lo exige centernotif_destino_chk). */
+  center_id?: string | null;
+  municipality_id?: number | null;
+  emergency_id?: number | null;
   activation_id?: number | null;
   destinatary?: number; // Users.user_id
   title: string;
   message: string;
   event_at?: Date | string; // por defecto now()
   channel?: string;         // por defecto 'system'
+  kind?: NotificationKind;
 };
 
 export type ListOpts = {

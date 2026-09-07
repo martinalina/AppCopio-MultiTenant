@@ -47,6 +47,11 @@ import CenterVolunteersPage from '@/pages/CenterVolunteersPage/CenterVolunteersP
 import ShiftsPage from "@/pages/ShiftsPage/ShiftsPage";
 import MyShiftsPage from "@/pages/MyShiftsPage/MyShiftsPage";
 import CenterRequestsPage from "@/pages/CenterRequestPage/CenterRequestsPage";
+import MunicipalitiesPage from "@/pages/SuperAdmin/MunicipalitiesPage";
+import MunicipalityDetailPage from "@/pages/SuperAdmin/MunicipalityDetailPage";
+import EmergenciesPage from "@/pages/Emergencies/EmergenciesPage";
+import IntermunicipalBoardPage from "@/pages/Emergencies/IntermunicipalBoardPage";
+import SupportOffersPage from "@/pages/Emergencies/SupportOffersPage";
 
 
 export default function App() {
@@ -63,14 +68,15 @@ export default function App() {
             <Route path="/typo" element={<ExampleFrontend />} /> 
           </Route>
 
-          {/* 2) Protegidas (roles 1,2,3 y 4; incluye es_apoyo_admin).
-              El rol 4 (Super Administrador) se incluye solo para que no rebote al home
-              y pueda llegar a su perfil: no tiene comuna, así que el Navbar no le
-              muestra los menús municipales. */}
+          {/* 2) Protegidas municipales (roles 1,2,3; incluye es_apoyo_admin).
+              El Super Administrador queda FUERA a propósito: no pertenece a ninguna
+              comuna y las políticas RLS lo dejan ver los centros de todas, así que
+              entrar acá le mostraría datos que no le corresponden. Sus pantallas
+              propias están en el bloque 4. */}
           <Route
             element={
               <ProtectedRoute
-                allowedRoleIds={[1, 2, 3, 4]}
+                allowedRoleIds={[1, 2, 3]}
                 checkSupportAdmin={true}
               />
             }
@@ -87,9 +93,16 @@ export default function App() {
               </Route>
               <Route path={paths.admin.users} element={<UsersManagementPage />} />
               <Route path={paths.admin.updates} element={<UpdatesPage />} />
-              <Route path={paths.profile} element={<MyUserPage />} />
+              {/* paths.profile vive en el bloque compartido: lo necesita también el
+                  Super Administrador y una ruta duplicada la ganaría este bloque. */}
               <Route path={paths.myCenters} element={<MisCentrosPage />} />
               <Route path={paths.notifications} element={<NotificationsPage />} />
+              {/* Emergencias: solo el administrador de la comuna decide participar. */}
+              <Route element={<ProtectedRoute allowedRoleIds={[1]} checkSupportAdmin={true} />}>
+                <Route path={paths.emergencies} element={<EmergenciesPage />} />
+                <Route path={paths.intermunicipalBoard} element={<IntermunicipalBoardPage />} />
+                <Route path={paths.supportOffers} element={<SupportOffersPage />} />
+              </Route>
               <Route path={paths.myShifts} element={<MyShiftsPage />} />
 
               {/* center/:centerId con hijos relativos + providers/guards */}
@@ -121,6 +134,22 @@ export default function App() {
 
               {/* Edit de centros */}
               <Route path={paths.admin.centers.editPattern} element={<CenterEditPage />} />
+            </Route>
+          </Route>
+
+          {/* 3) Compartidas: cualquier usuario autenticado, incluido el Super Administrador */}
+          <Route element={<ProtectedRoute allowedRoleIds={[1, 2, 3, 4]} checkSupportAdmin={true} />}>
+            <Route element={<MainLayout />}>
+              <Route path={paths.profile} element={<MyUserPage />} />
+            </Route>
+          </Route>
+
+          {/* 4) Solo Super Administrador (role_id 4) */}
+          <Route element={<ProtectedRoute allowedRoleIds={[4]} />}>
+            <Route element={<MainLayout />}>
+              <Route path={paths.superadmin.municipalities} element={<MunicipalitiesPage />} />
+              <Route path={paths.superadmin.municipalityDetailPattern} element={<MunicipalityDetailPage />} />
+              <Route path={paths.superadmin.emergencies} element={<EmergenciesPage />} />
             </Route>
           </Route>
 

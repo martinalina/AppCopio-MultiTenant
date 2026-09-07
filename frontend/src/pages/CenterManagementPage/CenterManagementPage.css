@@ -128,8 +128,23 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
+  flex-wrap: wrap; /* antes la fila se estrujaba en pantallas medianas */
   transition: box-shadow 0.2s ease;
   border-left: 5px solid #ccc; /* Gris por defecto */
+}
+
+/* min-width:0 es lo que permite que el texto largo se recorte en vez de
+   forzar el ancho de la fila y aplastar la botonera. */
+/* Selector con el padre a propósito: la clase .center-info también la define
+   NotificationsPage.css como flex-row y, al no estar scopeados los CSS, esa regla
+   se filtraba acá y ponía los datos del centro en una sola fila. */
+.center-item > .center-info {
+  display: block;
+  /* El min-width es lo que fuerza a la botonera a bajar de línea en vez de
+     estrujar el nombre del centro hasta partirlo en cuatro renglones. */
+  flex: 1 1 340px;
+  min-width: 300px;
 }
 
 .center-item:hover {
@@ -170,7 +185,74 @@
 .center-actions {
   display: flex;
   align-items: center;
-  gap: 20px; /* Espacio entre botón y switch */
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ---------------------------------------------------------------
+   Botones de la fila de centro.
+   Antes convivían tres estilos distintos (dos azules casi iguales, un
+   enlace morado sin estilo y un botón por defecto del navegador). Se
+   unifican en una sola forma y tamaño, y solo cambia el color según la
+   intención: acción principal, secundaria o destructiva.
+   --------------------------------------------------------------- */
+.center-actions .inventory-btn,
+.center-actions .info-button,
+.center-actions .edit-btn,
+.center-actions .delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 14px;
+  margin: 0;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+/* Principal */
+.center-actions .inventory-btn,
+.center-actions .info-button {
+  background-color: #17a2b8;
+  color: #fff;
+}
+.center-actions .inventory-btn:hover,
+.center-actions .info-button:hover {
+  background-color: #138496;
+}
+
+/* Secundaria */
+.center-actions .edit-btn {
+  background-color: #fff;
+  color: #3f51b5;
+  border-color: #c5cae9;
+}
+.center-actions .edit-btn:hover {
+  background-color: #eef0fb;
+}
+
+/* Destructiva */
+.center-actions .delete-btn {
+  background-color: #fff;
+  color: #c62828;
+  border-color: #f1c4c4;
+}
+.center-actions .delete-btn:hover {
+  background-color: #fdecec;
+}
+
+.center-actions .disabled-link {
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .info-button {
@@ -275,7 +357,6 @@ input:checked + .slider:before {
   font-size: 0.9em;
   font-weight: 500;
   transition: background-color 0.2s ease;
-  margin-right: 10px; 
 }
 .inventory-btn:hover {
   background-color: #138496;
@@ -291,6 +372,25 @@ input:checked + .slider:before {
 }
 
 /* Responsive design */
+@media (max-width: 1100px) {
+  .center-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* En columna, flex-basis pasa a controlar el ALTO: sin este reset el bloque de
+     datos reservaba 340px de alto y dejaba un hueco enorme sobre los botones. */
+  .center-item > .center-info {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+
+  .center-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
 @media (max-width: 768px) {
   .center-management-container {
     padding: 15px;
@@ -300,29 +400,14 @@ input:checked + .slider:before {
     grid-template-columns: 1fr;
   }
   
-  .center-item {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 15px;
-  }
-  
-  .center-actions {
-    width: 100%;
-    justify-content: space-between;
-  }
 }
 
 @media (max-width: 480px) {
-  .center-actions {
-    flex-direction: column;
-    gap: 10px;
-    align-items: stretch;
-  }
-  
-  .inventory-btn,
-  .info-button {
-    text-align: center;
-    margin-right: 0;
+  .center-actions .inventory-btn,
+  .center-actions .info-button,
+  .center-actions .edit-btn,
+  .center-actions .delete-btn {
+    flex: 1 1 calc(50% - 8px);
   }
 }
 .modal-backdrop {

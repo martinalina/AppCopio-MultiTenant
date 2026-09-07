@@ -20,6 +20,19 @@ export const paths = {
     },
   },
 
+  // Super Administración (solo role_id 4)
+  superadmin: {
+    municipalities: "/superadmin/municipalidades",
+    municipalityDetailPattern: "/superadmin/municipalidades/:municipalityId",
+    municipalityDetail: (id: string | number) => `/superadmin/municipalidades/${id}`,
+    emergencies: "/superadmin/emergencias",
+  },
+
+  // Emergencias de la comuna (admin municipal)
+  emergencies: "/emergencias",
+  intermunicipalBoard: "/emergencias/tablero",
+  supportOffers: "/emergencias/ofertas",
+
   // Perfil y mis centros
   notifications: '/notifications', 
   profile: "/mi-perfil",

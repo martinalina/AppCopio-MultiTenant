@@ -209,6 +209,7 @@ export async function createVolunteerContact(
       center_id: center_id,
       activation_id: activation_id,
       destinatary: userId,
+      kind: 'volunteer_contact',
       title,
       message,
     });
