@@ -6,6 +6,17 @@ import { UserCreate, UserUpdate } from "../services/userService";
 
 const router = Router();
 
+/**
+ * Índice único que impide un segundo Administrador activo por comuna (db/002b).
+ * Una violación suya llega acá como un 23505 cualquiera, así que sin distinguirla el
+ * usuario recibe "el email ya existe" cuando el problema es otro completamente.
+ */
+const ADMIN_UNICO_UQ = "users_one_active_admin_per_municipality_uq";
+
+const MENSAJE_ADMIN_UNICO =
+    "La comuna ya tiene un Administrador activo. Para nombrar otro, primero degrada al " +
+    "actual a Trabajador Municipal o desactiva su cuenta.";
+
 // =================================================================
 // 1. SECCIÓN DE CONTROLADORES (Logic Handlers)
 // =================================================================
@@ -56,7 +67,9 @@ const createNewUser: RequestHandler = async (req, res) => {
         const newUser = await createUser(pool, userData);
         res.status(201).json(newUser);
     } catch (e: any) {
-        if (e?.code === "23505") {
+        if (e?.code === "23505" && e?.constraint === ADMIN_UNICO_UQ) {
+            res.status(409).json({ error: MENSAJE_ADMIN_UNICO });
+        } else if (e?.code === "23505") {
             res.status(409).json({ error: "El RUT, email o nombre de usuario ya existe." });
         } else {
             console.error("Error en createNewUser:", e);
@@ -79,7 +92,9 @@ const updateUser: RequestHandler = async (req, res) => {
             res.json(updatedUser);
         }
     } catch (e: any) {
-        if (e?.code === "23505") {
+        if (e?.code === "23505" && e?.constraint === ADMIN_UNICO_UQ) {
+            res.status(409).json({ error: MENSAJE_ADMIN_UNICO });
+        } else if (e?.code === "23505") {
             res.status(409).json({ error: "El email o nombre de usuario ya existe." });
         } else {
             console.error(`Error en updateUser (id: ${userId}):`, e);
