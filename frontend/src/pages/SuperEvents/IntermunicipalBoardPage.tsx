@@ -1,7 +1,11 @@
-// src/pages/Emergencies/IntermunicipalBoardPage.tsx
+// src/pages/SuperEvents/IntermunicipalBoardPage.tsx
 //
-// Tablero intercomunal: centros activos de las OTRAS comunas participantes, con sus
-// necesidades, para poder ofrecerles apoyo.
+// Tablero intercomunal: centros activos de las OTRAS comunas participantes en un
+// SUPEREVENTO, con sus necesidades, para poder ofrecerles apoyo.
+//
+// El SuperEvento agrupa las emergencias locales de varias comunas, así que cada
+// centro llega etiquetado con la emergencia que lo aporta y se puede filtrar por
+// ella además de por comuna.
 //
 // La página es el contenedor: posee los datos, los filtros, la ubicación y el modo de
 // vista. Las dos vistas son presentacionales y consumen el mismo conjunto ya filtrado,
@@ -20,7 +24,7 @@ import MyLocationIcon from "@mui/icons-material/MyLocation";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { paths } from "@/routes/paths";
-import { listEmergencies, type Emergency } from "@/services/superadmin.service";
+import { listSuperEvents, type SuperEvent } from "@/services/superEvents.service";
 import {
   getBoard, coordenadaDe, compararPorUrgencia, type CentroCompartido,
 } from "@/services/crossSupport.service";
@@ -28,10 +32,11 @@ import { useGeolocation } from "@/hooks/useGeolocation";
 import { calculateDistance } from "@/utils/distance";
 import SharedCentersFilters, {
   FILTROS_INICIALES, type FiltrosTablero,
-} from "@/components/emergency/SharedCentersFilters";
-import SharedCentersList from "@/components/emergency/SharedCentersList";
-import SharedCentersMap from "@/components/emergency/SharedCentersMap";
-import OfferSupportDialog from "@/components/emergency/OfferSupportDialog";
+} from "@/components/superevent/SharedCentersFilters";
+import SharedCentersList from "@/components/superevent/SharedCentersList";
+import SharedCentersMap from "@/components/superevent/SharedCentersMap";
+import OfferSupportDialog from "@/components/superevent/OfferSupportDialog";
+import SuperEventLevelChip from "@/components/superevent/SuperEventLevelChip";
 
 type Vista = "listado" | "mapa";
 
@@ -43,8 +48,8 @@ export default function IntermunicipalBoardPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [emergencias, setEmergencias] = React.useState<Emergency[]>([]);
-  const [emergencyId, setEmergencyId] = React.useState<number | "">("");
+  const [superEventos, setSuperEventos] = React.useState<SuperEvent[]>([]);
+  const [superEventId, setSuperEventId] = React.useState<number | "">("");
   const [centros, setCentros] = React.useState<CentroCompartido[]>([]);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -70,29 +75,29 @@ export default function IntermunicipalBoardPage() {
     requestLocation,
   } = useGeolocation();
 
-  // Solo las emergencias vigentes donde la comuna ya está participando dan acceso
-  // al tablero; el backend rechaza el resto con 403.
+  // Solo los SuperEventos vigentes donde la comuna ya está participando dan acceso
+  // al tablero; el backend rechaza el resto con 403 o 409.
   React.useEffect(() => {
     (async () => {
       try {
-        const todas = await listEmergencies();
-        const disponibles = todas.filter((e) => !e.ended_at && e.mi_estado === "participando");
-        setEmergencias(disponibles);
-        if (disponibles.length > 0) setEmergencyId(disponibles[0].emergency_id);
+        const todos = await listSuperEvents();
+        const disponibles = todos.filter((se) => !se.ended_at && se.mi_estado === "participando");
+        setSuperEventos(disponibles);
+        if (disponibles.length > 0) setSuperEventId(disponibles[0].super_event_id);
       } catch (e: any) {
-        setError(mensajeError(e, "No se pudieron cargar las emergencias."));
+        setError(mensajeError(e, "No se pudieron cargar los SuperEventos."));
       }
     })();
   }, []);
 
   React.useEffect(() => {
-    if (emergencyId === "") { setCentros([]); return; }
+    if (superEventId === "") { setCentros([]); return; }
     let vivo = true;
     (async () => {
       setLoading(true);
       setError(null);
       try {
-        const data = await getBoard(Number(emergencyId));
+        const data = await getBoard(Number(superEventId));
         if (vivo) {
           setCentros(data);
           setFiltros(FILTROS_INICIALES);
@@ -104,7 +109,7 @@ export default function IntermunicipalBoardPage() {
       }
     })();
     return () => { vivo = false; };
-  }, [emergencyId]);
+  }, [superEventId]);
 
   // Si se pierde la ubicación, el orden por cercanía deja de tener sentido.
   React.useEffect(() => {
@@ -122,11 +127,17 @@ export default function IntermunicipalBoardPage() {
     [ubicacion]
   );
 
+  const superEventoActual = React.useMemo(
+    () => superEventos.find((se) => se.super_event_id === superEventId) ?? null,
+    [superEventos, superEventId]
+  );
+
   const visibles = React.useMemo(() => {
     const umbral = filtros.prioridadMinima;
 
     const filtrados = centros.filter((c) => {
       if (filtros.comuna !== "" && c.municipality_id !== filtros.comuna) return false;
+      if (filtros.emergencia !== "" && c.emergency_id !== filtros.emergencia) return false;
       if (filtros.itemId !== "" && !c.prioridades.some((p) => p.item_id === filtros.itemId)) return false;
       if (umbral === "alto" && !c.prioridades.some((p) => p.priority === "alto")) return false;
       if (umbral === "medio" && !c.prioridades.some((p) => p.priority === "alto" || p.priority === "medio")) {
@@ -167,10 +178,11 @@ export default function IntermunicipalBoardPage() {
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
       {aviso && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setAviso(null)}>{aviso}</Alert>}
 
-      {emergencias.length === 0 ? (
+      {superEventos.length === 0 ? (
         <Alert severity="info">
-          Tu comuna no está participando en ninguna emergencia vigente. Acepta una invitación
-          en <strong>Emergencias</strong> para ver el tablero.
+          Tu comuna no está participando en ningún SuperEvento vigente. Acepta una invitación
+          en <strong>SuperEventos</strong>, o crea uno desde una de tus emergencias, para ver
+          el tablero.
         </Alert>
       ) : (
         <>
@@ -179,16 +191,18 @@ export default function IntermunicipalBoardPage() {
             alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}
           >
             <FormControl sx={{ minWidth: 320 }} size="small">
-              <InputLabel id="em-label">Emergencia</InputLabel>
+              <InputLabel id="se-label">SuperEvento</InputLabel>
               <Select
-                labelId="em-label" label="Emergencia" value={emergencyId}
-                onChange={(e) => setEmergencyId(Number(e.target.value))}
+                labelId="se-label" label="SuperEvento" value={superEventId}
+                onChange={(e) => setSuperEventId(Number(e.target.value))}
               >
-                {emergencias.map((em) => (
-                  <MenuItem key={em.emergency_id} value={em.emergency_id}>{em.name}</MenuItem>
+                {superEventos.map((se) => (
+                  <MenuItem key={se.super_event_id} value={se.super_event_id}>{se.name}</MenuItem>
                 ))}
               </Select>
             </FormControl>
+
+            {superEventoActual && <SuperEventLevelChip level={superEventoActual.level} />}
 
             <ToggleButtonGroup
               size="small" exclusive value={vista}
@@ -228,7 +242,7 @@ export default function IntermunicipalBoardPage() {
 
           {!loading && centros.length === 0 && (
             <Alert severity="info">
-              Ninguna otra comuna tiene centros vinculados a esta emergencia todavía.
+              Ninguna otra comuna tiene centros vinculados a este SuperEvento todavía.
             </Alert>
           )}
 
@@ -254,7 +268,7 @@ export default function IntermunicipalBoardPage() {
 
       <OfferSupportDialog
         centro={ofrecerA}
-        emergencyId={emergencyId}
+        superEventId={superEventId}
         onClose={() => setOfrecerA(null)}
         onSent={setAviso}
       />

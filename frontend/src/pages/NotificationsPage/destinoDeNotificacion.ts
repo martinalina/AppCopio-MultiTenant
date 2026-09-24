@@ -19,7 +19,10 @@ export function destinoDeNotificacion(n: CenterNotification): string | null {
   switch (n.kind) {
     case "support_offer":
       return paths.supportOffers;
-    case "emergency_invitation":
+    // La invitación de comuna lleva a SuperEventos; la de un centro, a la
+    // emergencia LOCAL, que es donde el encargado la responde.
+    case "super_event_invitation":
+      return paths.superEvents;
     case "activation_invitation":
       return paths.emergencies;
     case "volunteer_contact":
@@ -27,8 +30,8 @@ export function destinoDeNotificacion(n: CenterNotification): string | null {
   }
 
   // Respaldo para filas sin kind.
-  if (n.emergency_id != null && n.center_id && n.activation_id == null) return paths.supportOffers;
-  if (n.emergency_id != null && n.activation_id == null) return paths.emergencies;
+  if (n.super_event_id != null) return paths.superEvents;
+  if (n.emergency_id != null && n.activation_id != null) return paths.emergencies;
   if (n.center_id) return `/center/${n.center_id}/details`;
   if (n.emergency_id != null) return paths.emergencies;
   return null;
@@ -38,6 +41,7 @@ export function destinoDeNotificacion(n: CenterNotification): string | null {
 export function etiquetaDeDestino(n: CenterNotification): string {
   const destino = destinoDeNotificacion(n);
   if (destino === paths.supportOffers) return "Ver ofertas de apoyo";
+  if (destino === paths.superEvents) return "Ir a SuperEventos";
   if (destino === paths.emergencies) return "Ir a emergencias";
   return "Ver detalles";
 }

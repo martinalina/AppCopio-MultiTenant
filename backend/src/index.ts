@@ -27,6 +27,7 @@ import {requireAuth} from "./auth/middleware";
 import { withTenant } from "./auth/tenantContext";
 import municipalityRoutes from "./routes/municipalityRoutes";
 import emergencyRoutes from "./routes/emergencyRoutes";
+import superEventRoutes from "./routes/superEventRoutes";
 import crossSupportRoutes from "./routes/crossSupportRoutes";
 import csvRoutes from "./routes/csvRoutes";
 
@@ -140,7 +141,8 @@ app.use("/api/centers", requireAuth, withTenant, movementRoutes);
 app.use('/api/volunteers', volunteerRoutes);
 app.use('/api/service-request', serviceRequestRoutes);
 app.use('/api/municipalities', requireAuth, withTenant, municipalityRoutes); // solo Super Administrador
-app.use('/api/emergencies', requireAuth, withTenant, emergencyRoutes);
+app.use('/api/emergencies', requireAuth, withTenant, emergencyRoutes);   // emergencias LOCALES de una comuna
+app.use('/api/super-events', requireAuth, withTenant, superEventRoutes); // colaboración intermunicipal
 app.use('/api/cross-support', requireAuth, withTenant, crossSupportRoutes);
 
 /** Middleware de errores (último siempre) */

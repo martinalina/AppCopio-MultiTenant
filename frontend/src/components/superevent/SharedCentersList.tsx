@@ -1,4 +1,4 @@
-// src/components/emergency/SharedCentersList.tsx
+// src/components/superevent/SharedCentersList.tsx
 //
 // Vista de listado del tablero intercomunal: responde "quién necesita qué, y con
 // cuánta urgencia". Es la grilla que antes vivía dentro de la página.

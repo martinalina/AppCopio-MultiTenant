@@ -37,6 +37,7 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import LocationCityIcon from "@mui/icons-material/LocationCity";
 import CampaignIcon from "@mui/icons-material/Campaign";
+import HubIcon from "@mui/icons-material/Hub";
 import HandshakeIcon from "@mui/icons-material/Handshake";
 import VerifiedUserIcon from "@mui/icons-material/VerifiedUser";
 import LoginIcon from "@mui/icons-material/Login";
@@ -391,6 +392,13 @@ export default function VerticalNavbar() {
                   onClick={handleNavItemClick}
                 />
                 <NavItem
+                  to={paths.superEvents}
+                  icon={<HubIcon />}
+                  label="SuperEventos"
+                  isCollapsed={false}
+                  onClick={handleNavItemClick}
+                />
+                <NavItem
                   to={paths.intermunicipalBoard}
                   icon={<HandshakeIcon />}
                   label="Apoyo intercomunal"
@@ -413,9 +421,9 @@ export default function VerticalNavbar() {
               onClick={handleNavItemClick}
             />
             <NavItem
-              to={paths.superadmin.emergencies}
-              icon={<CampaignIcon />}
-              label="Emergencias"
+              to={paths.superadmin.superEvents}
+              icon={<HubIcon />}
+              label="SuperEventos"
               isCollapsed={isCollapsed}
               onClick={handleNavItemClick}
             />

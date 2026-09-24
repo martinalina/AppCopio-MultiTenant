@@ -1,7 +1,11 @@
 // src/routes/crossSupportRoutes.ts
 //
-// Tablero intercomunal y ofertas de apoyo entre comunas participantes de una
-// misma emergencia.
+// Tablero intercomunal y ofertas de apoyo entre comunas participantes de un
+// mismo SUPEREVENTO.
+//
+// Desde 002d la colaboración no cuelga de la emergencia sino del SuperEvento, que
+// agrupa las emergencias locales de varias comunas. Cada centro del tablero viene
+// etiquetado con la emergencia que lo aporta.
 //
 // Quién puede cambiar el estado de una oferta:
 //   - la comuna que la ENVIÓ  -> cancelled
@@ -48,7 +52,7 @@ function manejarError(res: any, err: any, contexto: string) {
     return;
   }
   if (err?.code === '23503') {
-    res.status(404).json({ error: 'La emergencia o el centro indicado no existe.' });
+    res.status(404).json({ error: 'El SuperEvento o el centro indicado no existe.' });
     return;
   }
   if (err?.code === '42501') {
@@ -59,17 +63,33 @@ function manejarError(res: any, err: any, contexto: string) {
   res.status(500).json({ error: 'Error interno del servidor.' });
 }
 
-/** La comuna del request debe haber ACEPTADO la invitación, no solo tenerla. */
-async function comunaParticipa(emergencyId: number, res: any): Promise<boolean> {
+/**
+ * La comuna del request debe haber ACEPTADO la invitación, no solo tenerla, y el
+ * SuperEvento debe seguir vigente.
+ *
+ * El chequeo de ended_at es nuevo: antes cerrar era puramente informativo y la
+ * colaboración seguía viva hasta que se cerraban las activaciones. Ahora el cierre
+ * corta de verdad, tanto acá como en las funciones super_event_* de la base.
+ */
+async function comunaParticipa(superEventId: number, res: any): Promise<boolean> {
   const { rows } = await pool.query(
-    `SELECT status FROM EmergencyParticipants
-      WHERE emergency_id = $1 AND municipality_id = current_tenant()`,
-    [emergencyId]
+    `SELECT p.status, se.ended_at, se.name
+       FROM SuperEventParticipants p
+       JOIN SuperEvents se ON se.super_event_id = p.super_event_id
+      WHERE p.super_event_id = $1 AND p.municipality_id = current_tenant()`,
+    [superEventId]
   );
   if (rows[0]?.status !== 'participando') {
     res.status(403).json({
       error: 'NO_PARTICIPA',
-      message: 'Tu comuna debe estar participando en la emergencia para usar el tablero intercomunal.',
+      message: 'Tu comuna debe estar participando en el SuperEvento para usar el tablero intercomunal.',
+    });
+    return false;
+  }
+  if (rows[0].ended_at != null) {
+    res.status(409).json({
+      error: 'SUPEREVENTO_CERRADO',
+      message: `"${rows[0].name}" está cerrado: la colaboración intercomunal terminó.`,
     });
     return false;
   }
@@ -80,14 +100,14 @@ async function comunaParticipa(emergencyId: number, res: any): Promise<boolean> 
 const board: RequestHandler = async (req, res) => {
   try {
     const user = requireUser(req);
-    const emergencyId = parseInt(req.params.emergencyId, 10);
-    if (isNaN(emergencyId)) {
-      res.status(400).json({ error: 'emergency_id inválido.' });
+    const superEventId = parseInt(req.params.superEventId, 10);
+    if (isNaN(superEventId)) {
+      res.status(400).json({ error: 'super_event_id inválido.' });
       return;
     }
-    if (!(await comunaParticipa(emergencyId, res))) return;
+    if (!(await comunaParticipa(superEventId, res))) return;
 
-    res.json(await getBoard(pool, emergencyId, user.municipality_id));
+    res.json(await getBoard(pool, superEventId, user.municipality_id));
   } catch (err: any) {
     manejarError(res, err, 'board');
   }
@@ -111,25 +131,25 @@ const create: RequestHandler = async (req, res) => {
   try {
     const user = requireUser(req);
     const fromMunicipalityId = requireTenant(req);
-    const { emergency_id, target_center_id, item_id, message } = req.body ?? {};
+    const { super_event_id, target_center_id, item_id, message } = req.body ?? {};
 
-    const emergencyId = Number(emergency_id);
-    if (!Number.isFinite(emergencyId) || !target_center_id) {
-      res.status(400).json({ error: 'Se requieren emergency_id y target_center_id.' });
+    const superEventId = Number(super_event_id);
+    if (!Number.isFinite(superEventId) || !target_center_id) {
+      res.status(400).json({ error: 'Se requieren super_event_id y target_center_id.' });
       return;
     }
-    if (!(await comunaParticipa(emergencyId, res))) return;
+    if (!(await comunaParticipa(superEventId, res))) return;
 
-    // El centro destino debe ser uno de los compartidos por esta emergencia: así no
-    // se puede ofrecer apoyo a un centro que la emergencia no expone.
+    // El centro destino debe ser uno de los compartidos por este SuperEvento: así
+    // no se puede ofrecer apoyo a un centro que el SuperEvento no expone.
     const { rows: compartidos } = await pool.query(
-      `SELECT center_id, municipality_id FROM emergency_shared_centers($1) WHERE center_id = $2`,
-      [emergencyId, target_center_id]
+      `SELECT center_id, municipality_id FROM super_event_shared_centers($1) WHERE center_id = $2`,
+      [superEventId, target_center_id]
     );
     if (compartidos.length === 0) {
       res.status(400).json({
         error: 'CENTRO_NO_DISPONIBLE',
-        message: 'Ese centro no participa en la emergencia o no está activo.',
+        message: 'Ese centro no participa en el SuperEvento o no está activo.',
       });
       return;
     }
@@ -142,7 +162,7 @@ const create: RequestHandler = async (req, res) => {
     }
 
     const oferta = await createOffer(pool, {
-      emergency_id: emergencyId,
+      super_event_id: superEventId,
       target_center_id,
       item_id: item_id ?? null,
       message: message ?? null,
@@ -218,7 +238,7 @@ const updateStatus: RequestHandler = async (req, res) => {
   }
 };
 
-router.get('/board/:emergencyId', soloAdminOApoyo, board);
+router.get('/board/:superEventId', soloAdminOApoyo, board);
 router.get('/offers', soloAdminOApoyo, list);
 router.post('/offers', soloAdminOApoyo, create);
 router.patch('/offers/:offerId', soloAdminOApoyo, updateStatus);

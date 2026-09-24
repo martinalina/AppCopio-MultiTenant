@@ -2,7 +2,7 @@ import * as React from "react";
 import { Outlet } from "react-router-dom";
 import { Box, LinearProgress } from "@mui/material";
 import VerticalNavbar, { DRAWER_WIDTH, DRAWER_WIDTH_COLLAPSED, APP_BAR_HEIGHT } from "@/components/layout/navbar/Navbar";
-import EmergencyInviteDialog from "@/components/emergency/EmergencyInviteDialog";
+import SuperEventInviteDialog from "@/components/superevent/SuperEventInviteDialog";
 
 function PageFallback() {
   return (
@@ -18,7 +18,7 @@ function MainLayoutContent() {
     <Box sx={{ display: "flex", minHeight: "100vh" }}>
       <VerticalNavbar />
       {/* Aviso en pantalla de invitacion a emergencia (sondeo de 30s, sin correo). */}
-      <EmergencyInviteDialog />
+      <SuperEventInviteDialog />
       
       {/* Main Content Area */}
       <Box

@@ -1,347 +1,151 @@
 // src/routes/emergencyRoutes.ts
 //
-// Colaboración intermunicipal: declarar emergencias, invitar comunas, responder la
-// invitación, cerrar y vincular activaciones (una a una o en lote).
+// Emergencias LOCALES de una comuna: crear, cerrar y gestionar qué centros
+// participan en ellas.
 //
-// Una comuna NO se auto-inscribe: se la invita (status 'invitada') y ella acepta o
-// rechaza. Solo con 'participando' se comparten prioridades (política cip_intermunicipal_read).
+// Desde 002d acá NO hay colaboración intermunicipal. Invitar comunas, el tablero
+// y las ofertas viven en el SuperEvento (superEventRoutes.ts / crossSupportRoutes.ts).
+// Una emergencia es siempre de UNA comuna: created_by_municipality_id es NOT NULL
+// y la política emergencies_tenant_isolation impide ver las ajenas.
 //
-// Quién declara qué (las políticas RLS de 002a lo refuerzan en la BD):
-//  - Admin municipal: emergencias a nombre de SU comuna (created_by_municipality_id = su comuna),
-//    y queda inscrita como primer participante.
-//  - Super Administrador: emergencias regionales (created_by_municipality_id = NULL).
+// El Super Administrador NO crea emergencias: no tiene comuna. Crea SuperEventos.
+//
+// Consentimiento por centro: al crear la emergencia se avisa a los encargados de
+// las activaciones SUELTAS para que decidan si su centro se suma. Después, el
+// administrador puede invitar a cualquier activación abierta desde
+// POST /:id/invite-activations, incluidas las que rechazaron o las que están en
+// otra emergencia y deben trasladarse.
 import { Router, RequestHandler } from 'express';
 import pool from '../config/db';
-import { requireUser, requireTenant, SUPERADMIN_ROLE_ID, ADMIN_ROLE_ID } from '../auth/requireUser';
-import { createNotification } from '../services/notificationService';
+import { requireUser, requireTenant } from '../auth/requireUser';
+import {
+  createEmergency as crearEmergencia,
+  invitarActivaciones,
+  listActivationsStatus,
+  listLinkedActivations,
+  responderActivacion,
+  vincularActivaciones,
+} from '../services/emergencyService';
 
 const router = Router();
+
+function manejarError(res: any, err: any, contexto: string) {
+  if (err?.status) {
+    res.status(err.status).json({ error: err.message, message: err.publicMessage });
+    return;
+  }
+  if (err?.code === '23503') {
+    res.status(404).json({ error: 'La emergencia o la activación indicada no existe.' });
+    return;
+  }
+  if (err?.code === '42501') {
+    res.status(403).json({ error: 'No tienes permiso para esta operación sobre la emergencia.' });
+    return;
+  }
+  console.error(`Error en ${contexto}:`, err);
+  res.status(500).json({ error: 'Error interno del servidor.' });
+}
+
+/** La emergencia existe y es de mi comuna (RLS ya lo garantiza; esto da el 404). */
+async function emergenciaPropia(emergencyId: number, res: any) {
+  const { rows } = await pool.query(
+    `SELECT emergency_id, name, ended_at, super_event_id FROM Emergencies
+      WHERE emergency_id = $1`,
+    [emergencyId]
+  );
+  if (!rows[0]) {
+    res.status(404).json({ error: 'La emergencia no existe o no pertenece a tu comuna.' });
+    return null;
+  }
+  return rows[0];
+}
+
+function idValido(res: any, valor: string, campo: string): number | null {
+  const n = parseInt(valor, 10);
+  if (isNaN(n)) {
+    res.status(400).json({ error: `${campo} inválido.` });
+    return null;
+  }
+  return n;
+}
 
 const listEmergencies: RequestHandler = async (req, res) => {
   try {
     requireUser(req);
-    // RLS ya limita el listado: superadmin ve todas; una comuna ve las suyas y
-    // aquellas en las que participa.
+    // RLS ya limita el listado a las emergencias de la propia comuna. El JOIN a
+    // SuperEvents pasa por super_events_read, que solo muestra aquellos en los
+    // que la comuna participa — y si aporta la emergencia, participa.
     const { rows } = await pool.query(
       `SELECT e.emergency_id, e.name, e.type, e.started_at, e.ended_at,
               e.created_by_municipality_id,
-              (SELECT ep.status FROM EmergencyParticipants ep
-                WHERE ep.emergency_id = e.emergency_id
-                  AND ep.municipality_id = current_tenant()) AS mi_estado,
-              (SELECT COUNT(*) FROM emergency_participants_of(e.emergency_id) p
-                WHERE p.status = 'participando') AS total_participando
-       FROM Emergencies e
-       ORDER BY e.started_at DESC`
+              e.super_event_id, se.name AS super_event_name, se.level AS super_event_level,
+              se.ended_at AS super_event_ended_at,
+              (SELECT COUNT(*) FROM CentersActivations ca
+                WHERE ca.emergency_id = e.emergency_id AND ca.ended_at IS NULL)::int
+                AS centros_vinculados
+         FROM Emergencies e
+         LEFT JOIN SuperEvents se ON se.super_event_id = e.super_event_id
+        ORDER BY e.started_at DESC`
     );
     res.json(rows);
   } catch (err: any) {
-    if (err?.status) {
-      res.status(err.status).json({ error: err.message });
-      return;
-    }
-    console.error('Error en listEmergencies:', err);
-    res.status(500).json({ error: 'Error interno del servidor.' });
+    manejarError(res, err, 'listEmergencies');
   }
 };
 
 const createEmergency: RequestHandler = async (req, res) => {
   try {
     const user = requireUser(req);
+    // requireTenant rechaza al Super Administrador con 403 TENANT_REQUIRED: no
+    // tiene comuna, y toda emergencia es local. Él crea SuperEventos.
+    const municipalityId = requireTenant(req);
     const { name, type } = req.body ?? {};
+
     if (!name || typeof name !== 'string' || !name.trim()) {
       res.status(400).json({ error: 'El campo name es requerido.' });
       return;
     }
 
-    const isSuperadmin = user.role_id === SUPERADMIN_ROLE_ID;
-    // El alcance NUNCA viene del body: se deriva del rol y de la comuna del JWT.
-    const scopeMunicipalityId = isSuperadmin ? null : user.municipality_id;
+    // La comuna NUNCA viene del body: sale del JWT verificado.
+    const emergencia = await crearEmergencia(pool, {
+      name,
+      type: type ?? null,
+      created_by: user.user_id,
+      municipality_id: municipalityId,
+    });
 
-    const { rows } = await pool.query(
-      `INSERT INTO Emergencies (name, type, created_by, created_by_municipality_id)
-       VALUES ($1, $2, $3, $4)
-       RETURNING emergency_id, name, type, started_at, created_by_municipality_id`,
-      [name.trim(), type ?? null, user.user_id, scopeMunicipalityId]
-    );
-    const emergency = rows[0];
-
-    // Quien declara una emergencia local queda inscrito de inmediato.
-    if (scopeMunicipalityId != null) {
-      await pool.query(
-        `INSERT INTO EmergencyParticipants (emergency_id, municipality_id, status, responded_at)
-         VALUES ($1, $2, 'participando', now())
-         ON CONFLICT DO NOTHING`,
-        [emergency.emergency_id, scopeMunicipalityId]
-      );
-    }
-
-    res.status(201).json(emergency);
+    res.status(201).json(emergencia);
   } catch (err: any) {
-    if (err?.status) {
-      res.status(err.status).json({ error: err.message });
-      return;
-    }
-    console.error('Error en createEmergency:', err);
-    res.status(500).json({ error: 'Error interno del servidor.' });
-  }
-};
-
-/** Asocia una activación ya existente a una emergencia (o la desasocia con null). */
-const linkActivation: RequestHandler = async (req, res) => {
-  try {
-    requireUser(req);
-    const activationId = parseInt(req.params.activationId, 10);
-    const { emergency_id } = req.body ?? {};
-    if (isNaN(activationId)) {
-      res.status(400).json({ error: 'activation_id inválido.' });
-      return;
-    }
-
-    // RLS acota el UPDATE a activaciones de la propia comuna.
-    const { rows } = await pool.query(
-      `UPDATE CentersActivations
-          SET emergency_id = $1
-        WHERE activation_id = $2
-        RETURNING activation_id, center_id, emergency_id`,
-      [emergency_id ?? null, activationId]
-    );
-
-    if (rows.length === 0) {
-      res.status(404).json({ error: 'Activación no encontrada.' });
-      return;
-    }
-    res.json(rows[0]);
-  } catch (err: any) {
-    if (err?.status) {
-      res.status(err.status).json({ error: err.message });
-      return;
-    }
-    if (err?.code === '23503') {
-      res.status(400).json({ error: 'La emergencia indicada no existe o no es visible para tu comuna.' });
-      return;
-    }
-    console.error('Error en linkActivation:', err);
-    res.status(500).json({ error: 'Error interno del servidor.' });
-  }
-};
-
-/** Comunas de la emergencia con su estado de participación. */
-const listParticipants: RequestHandler = async (req, res) => {
-  try {
-    requireUser(req);
-    const emergencyId = parseInt(req.params.emergencyId, 10);
-    if (isNaN(emergencyId)) {
-      res.status(400).json({ error: 'emergency_id inválido.' });
-      return;
-    }
-    // Via funcion SECURITY DEFINER: la politica de EmergencyParticipants solo deja ver
-    // la fila propia, asi que una consulta directa nunca mostraria a las demas comunas.
-    const { rows } = await pool.query(
-      `SELECT * FROM emergency_participants_of($1)`,
-      [emergencyId]
-    );
-    res.json(rows);
-  } catch (err: any) {
-    manejarError(res, err, 'listParticipants');
+    manejarError(res, err, 'createEmergency');
   }
 };
 
 /**
- * Invita comunas a la emergencia: crea la fila en 'invitada' y una notificación
- * municipal por comuna.
+ * Cierra la emergencia.
  *
- * Se usa createNotification y NO sendNotification: esta última dispara el envío de
- * correo, y el requisito es aviso solo por aplicación.
- */
-const inviteMunicipalities: RequestHandler = async (req, res) => {
-  try {
-    const user = requireUser(req);
-    const emergencyId = parseInt(req.params.emergencyId, 10);
-    const { municipality_ids } = req.body ?? {};
-
-    if (isNaN(emergencyId)) {
-      res.status(400).json({ error: 'emergency_id inválido.' });
-      return;
-    }
-    if (!Array.isArray(municipality_ids) || municipality_ids.length === 0) {
-      res.status(400).json({ error: 'municipality_ids debe ser un arreglo con al menos una comuna.' });
-      return;
-    }
-
-    const { rows: emRows } = await pool.query(
-      `SELECT emergency_id, name FROM Emergencies WHERE emergency_id = $1`,
-      [emergencyId]
-    );
-    const emergencia = emRows[0];
-    if (!emergencia) {
-      res.status(404).json({ error: 'La emergencia no existe o no es visible para ti.' });
-      return;
-    }
-
-    const invitadas: number[] = [];
-    const yaEstaban: number[] = [];
-
-    for (const rawId of municipality_ids) {
-      const municipalityId = Number(rawId);
-      if (!Number.isFinite(municipalityId)) continue;
-
-      // La política emergency_participants_write restringe quién puede invitar:
-      // superadmin, o la comuna que declaró la emergencia.
-      const { rowCount } = await pool.query(
-        `INSERT INTO EmergencyParticipants (emergency_id, municipality_id, status, invited_by)
-         VALUES ($1, $2, 'invitada', $3)
-         ON CONFLICT (emergency_id, municipality_id) DO NOTHING`,
-        [emergencyId, municipalityId, user.user_id]
-      );
-
-      if (!rowCount) {
-        yaEstaban.push(municipalityId);
-        continue;
-      }
-
-      // La invitación va dirigida a quienes pueden aceptarla: el administrador de la
-      // comuna y los trabajadores con es_apoyo_admin, que son exactamente los que el
-      // guard de rutas deja entrar a /emergencias.
-      //
-      // Se inserta UNA FILA POR PERSONA en vez de un solo aviso de comuna: read_at es
-      // por fila, así que con una fila compartida el primero que la lee apaga el badge
-      // de todos los demás.
-      const { rows: destinatarios } = await pool.query(
-        `SELECT user_id FROM Users
-          WHERE municipality_id = $1 AND is_active = TRUE
-            AND (role_id = 1 OR es_apoyo_admin = TRUE)`,
-        [municipalityId]
-      );
-
-      const mensaje =
-        `Tu comuna fue invitada a participar en "${emergencia.name}". Al aceptar, ` +
-        `compartirás las prioridades de tus centros activos con las demás comunas participantes.`;
-
-      // Si la comuna no tiene a nadie que pueda aceptarla, queda como aviso de comuna
-      // (destinatary null) para que la invitación no se pierda.
-      const paraQuien: (number | undefined)[] =
-        destinatarios.length > 0 ? destinatarios.map((d: any) => d.user_id) : [undefined];
-
-      for (const destinatary of paraQuien) {
-        await createNotification(pool, {
-          municipality_id: municipalityId,
-          emergency_id: emergencyId,
-          destinatary,
-          title: 'Invitación a emergencia',
-          message: mensaje,
-          channel: 'system',
-          kind: 'emergency_invitation',
-        });
-      }
-      invitadas.push(municipalityId);
-    }
-
-    res.status(201).json({ emergency_id: emergencyId, invitadas, ya_estaban: yaEstaban });
-  } catch (err: any) {
-    manejarError(res, err, 'inviteMunicipalities');
-  }
-};
-
-/** La comuna acepta o rechaza la invitación. Solo su administrador decide. */
-const respondInvitation: RequestHandler = async (req, res) => {
-  try {
-    const user = requireUser(req);
-    const municipalityId = requireTenant(req);
-    const emergencyId = parseInt(req.params.emergencyId, 10);
-    const { accept } = req.body ?? {};
-
-    if (isNaN(emergencyId)) {
-      res.status(400).json({ error: 'emergency_id inválido.' });
-      return;
-    }
-    if (typeof accept !== 'boolean') {
-      res.status(400).json({ error: 'Se requiere el campo accept (boolean).' });
-      return;
-    }
-    if (user.role_id !== ADMIN_ROLE_ID && !user.es_apoyo_admin) {
-      res.status(403).json({
-        error: 'ADMIN_REQUERIDO',
-        message: 'Solo el administrador de la comuna puede responder una invitación a emergencia.',
-      });
-      return;
-    }
-
-    const { rows } = await pool.query(
-      `UPDATE EmergencyParticipants
-          SET status = $1, responded_at = now()
-        WHERE emergency_id = $2 AND municipality_id = $3
-        RETURNING emergency_id, municipality_id, status, responded_at`,
-      [accept ? 'participando' : 'rechazada', emergencyId, municipalityId]
-    );
-
-    if (!rows[0]) {
-      res.status(404).json({ error: 'Tu comuna no tiene una invitación a esa emergencia.' });
-      return;
-    }
-
-    // Cierra el aviso en pantalla del administrador para que no vuelva a saltar.
-    // Solo el suyo: los avisos por activación (activation_id) los responde su encargado.
-    await pool.query(
-      `UPDATE CenterNotifications
-          SET read_at = now(), updated_at = now()
-        WHERE emergency_id = $1 AND municipality_id = $2
-          AND activation_id IS NULL AND read_at IS NULL`,
-      [emergencyId, municipalityId]
-    );
-
-    // Al aceptar, cada centro con activación vigente decide por su cuenta si se suma.
-    let avisosEnviados = 0;
-    if (accept) {
-      const { rows: emRows } = await pool.query(
-        `SELECT name FROM Emergencies WHERE emergency_id = $1`,
-        [emergencyId]
-      );
-      avisosEnviados = await avisarEncargadosDeActivaciones(
-        emergencyId,
-        emRows[0]?.name ?? 'la emergencia',
-        municipalityId
-      );
-    }
-
-    res.json({ ...rows[0], avisos_a_encargados: avisosEnviados });
-  } catch (err: any) {
-    manejarError(res, err, 'respondInvitation');
-  }
-};
-
-/**
- * Cierra la emergencia (ended_at).
- *
- * OJO: el cierre es INFORMATIVO. No corta el acceso intercomunal: las prioridades se
- * dejan de compartir al cerrar las activaciones vinculadas o al desvincularlas. Por eso
- * la respuesta devuelve cuántas activaciones siguen abiertas, para que la UI lo advierta.
+ * Ya no hace falta la advertencia sobre acceso intercomunal que traía antes: desde
+ * 002d el acceso lo corta el cierre del SUPEREVENTO, no el de la emergencia. Se
+ * sigue devolviendo el conteo de activaciones abiertas como dato operativo.
  */
 const closeEmergency: RequestHandler = async (req, res) => {
   try {
     requireUser(req);
-    const emergencyId = parseInt(req.params.emergencyId, 10);
-    if (isNaN(emergencyId)) {
-      res.status(400).json({ error: 'emergency_id inválido.' });
-      return;
-    }
+    const emergencyId = idValido(res, req.params.emergencyId, 'emergency_id');
+    if (emergencyId == null) return;
 
-    // RLS (emergencies_update) ya restringe a superadmin o comuna creadora.
     const { rows } = await pool.query(
-      `UPDATE Emergencies
-          SET ended_at = COALESCE(ended_at, now())
+      `UPDATE Emergencies SET ended_at = COALESCE(ended_at, now())
         WHERE emergency_id = $1
-        RETURNING emergency_id, name, started_at, ended_at`,
+        RETURNING emergency_id, name, started_at, ended_at, super_event_id`,
       [emergencyId]
     );
-
     if (!rows[0]) {
       res.status(404).json({ error: 'La emergencia no existe o no puedes cerrarla.' });
       return;
     }
 
     const { rows: pendientes } = await pool.query(
-      `SELECT COUNT(*)::int AS abiertas
-         FROM CentersActivations
+      `SELECT COUNT(*)::int AS abiertas FROM CentersActivations
         WHERE emergency_id = $1 AND ended_at IS NULL`,
       [emergencyId]
     );
@@ -352,45 +156,7 @@ const closeEmergency: RequestHandler = async (req, res) => {
   }
 };
 
-/** Vinculación masiva de activaciones abiertas de la propia comuna. */
-const linkActivationsBulk: RequestHandler = async (req, res) => {
-  try {
-    requireUser(req);
-    const emergencyId = parseInt(req.params.emergencyId, 10);
-    const { activation_ids, all_open } = req.body ?? {};
-
-    if (isNaN(emergencyId)) {
-      res.status(400).json({ error: 'emergency_id inválido.' });
-      return;
-    }
-    if (!all_open && (!Array.isArray(activation_ids) || activation_ids.length === 0)) {
-      res.status(400).json({ error: 'Indica activation_ids o all_open: true.' });
-      return;
-    }
-    if (!(await comunaParticipa(emergencyId, res))) return;
-
-    // RLS acota el UPDATE a activaciones de la propia comuna.
-    const { rows } = all_open
-      ? await pool.query(
-          `UPDATE CentersActivations SET emergency_id = $1
-            WHERE ended_at IS NULL AND emergency_id IS DISTINCT FROM $1
-            RETURNING activation_id, center_id`,
-          [emergencyId]
-        )
-      : await pool.query(
-          `UPDATE CentersActivations SET emergency_id = $1
-            WHERE activation_id = ANY($2::int[]) AND ended_at IS NULL
-            RETURNING activation_id, center_id`,
-          [emergencyId, activation_ids.map(Number)]
-        );
-
-    res.json({ emergency_id: emergencyId, vinculadas: rows.length, activaciones: rows });
-  } catch (err: any) {
-    manejarError(res, err, 'linkActivationsBulk');
-  }
-};
-
-/** Activaciones abiertas de la comuna, para elegir cuáles vincular. */
+/** Activaciones abiertas de la comuna que todavía no tienen emergencia. */
 const listOwnOpenActivations: RequestHandler = async (req, res) => {
   try {
     requireUser(req);
@@ -408,142 +174,185 @@ const listOwnOpenActivations: RequestHandler = async (req, res) => {
   }
 };
 
-/** La comuna del request debe haber ACEPTADO la invitación, no solo tenerla. */
-async function comunaParticipa(emergencyId: number, res: any): Promise<boolean> {
-  const { rows } = await pool.query(
-    `SELECT status FROM EmergencyParticipants
-      WHERE emergency_id = $1 AND municipality_id = current_tenant()`,
-    [emergencyId]
-  );
-  if (rows[0]?.status !== 'participando') {
-    res.status(403).json({
-      error: 'NO_PARTICIPA',
-      message: 'Tu comuna debe aceptar la invitación a la emergencia antes de vincular activaciones.',
-    });
-    return false;
-  }
-  return true;
-}
+/** Asocia una activación a una emergencia, o la desasocia con null. */
+const linkActivation: RequestHandler = async (req, res) => {
+  try {
+    const user = requireUser(req);
+    const activationId = idValido(res, req.params.activationId, 'activation_id');
+    if (activationId == null) return;
+    const { emergency_id } = req.body ?? {};
 
-function manejarError(res: any, err: any, contexto: string) {
-  if (err?.status) {
-    res.status(err.status).json({ error: err.message, message: err.publicMessage });
-    return;
-  }
-  if (err?.code === '23503') {
-    res.status(404).json({ error: 'La emergencia o la comuna indicada no existe.' });
-    return;
-  }
-  if (err?.code === '42501') {
-    res.status(403).json({ error: 'No tienes permiso para esta operación sobre la emergencia.' });
-    return;
-  }
-  console.error(`Error en ${contexto}:`, err);
-  res.status(500).json({ error: 'Error interno del servidor.' });
-}
-
-
-/**
- * Al aceptar una emergencia, la comuna NO vincula sus centros de golpe: se avisa al
- * encargado de cada activación vigente para que decida si su centro se suma.
- *
- * El destinatario es el encargado asignado a la activación (ActivationAssignments
- * vigente); si no hay ninguno, se usa el encargado municipal del centro. Si tampoco
- * hay, no se manda nada: ese centro lo vincula el administrador desde /emergencias.
- */
-async function avisarEncargadosDeActivaciones(
-  emergencyId: number,
-  emergencyName: string,
-  municipalityId: number
-): Promise<number> {
-  const { rows: activaciones } = await pool.query(
-    `SELECT ca.activation_id, ca.center_id, c.name AS center_name,
-            COALESCE(
-              array_remove(array_agg(DISTINCT aa.user_id) FILTER (WHERE aa.end_date IS NULL), NULL),
-              ARRAY[]::int[]
-            ) AS encargados,
-            c.municipal_manager_id
-       FROM CentersActivations ca
-       JOIN Centers c ON c.center_id = ca.center_id
-       LEFT JOIN ActivationAssignments aa ON aa.activation_id = ca.activation_id
-      WHERE ca.ended_at IS NULL
-        AND ca.emergency_id IS DISTINCT FROM $1
-      GROUP BY ca.activation_id, ca.center_id, c.name, c.municipal_manager_id`,
-    [emergencyId]
-  );
-
-  let enviadas = 0;
-  for (const act of activaciones) {
-    const destinatarios: number[] = act.encargados?.length
-      ? act.encargados
-      : act.municipal_manager_id
-      ? [act.municipal_manager_id]
-      : [];
-
-    for (const destinatary of destinatarios) {
-      await createNotification(pool, {
-        center_id: act.center_id,
-        activation_id: act.activation_id,
-        municipality_id: municipalityId,
-        emergency_id: emergencyId,
-        destinatary,
-        kind: 'activation_invitation',
-        title: 'Tu centro puede sumarse a una emergencia',
-        message:
-          `Tu comuna se sumó a "${emergencyName}". ¿Quieres que ${act.center_name} participe? ` +
-          `Al aceptar, las demás comunas participantes podrán ver las prioridades de este centro.`,
-        channel: 'system',
-      });
-      enviadas++;
+    // RLS acota el UPDATE a activaciones de la propia comuna.
+    const { rows } = await pool.query(
+      `UPDATE CentersActivations SET emergency_id = $1
+        WHERE activation_id = $2
+        RETURNING activation_id, center_id, emergency_id`,
+      [emergency_id ?? null, activationId]
+    );
+    if (rows.length === 0) {
+      res.status(404).json({ error: 'Activación no encontrada.' });
+      return;
     }
+
+    if (emergency_id != null) {
+      await pool.query(
+        `INSERT INTO EmergencyActivationInvitations
+           (emergency_id, activation_id, status, invited_by, responded_by, responded_at)
+         VALUES ($1, $2, 'aceptada', $3, $3, now())
+         ON CONFLICT (emergency_id, activation_id) DO UPDATE
+           SET status = 'aceptada', responded_by = EXCLUDED.responded_by, responded_at = now()`,
+        [emergency_id, activationId, user.user_id]
+      );
+    }
+
+    res.json(rows[0]);
+  } catch (err: any) {
+    if (err?.code === '23503') {
+      res.status(400).json({ error: 'La emergencia indicada no existe o no es de tu comuna.' });
+      return;
+    }
+    manejarError(res, err, 'linkActivation');
   }
-  return enviadas;
-}
+};
+
+// =================================================================
+// GESTIÓN CONTINUA DE CENTROS
+//
+// La tanda de invitaciones que sale al crear la emergencia es solo la primera.
+// Estos tres endpoints cubren todo el ciclo posterior.
+// =================================================================
 
 /**
- * El encargado de un centro decide si su activación se suma a la emergencia.
- * El administrador de la comuna puede corregirlo después desde /emergencias.
+ * TODAS las activaciones abiertas de la comuna con su estado frente a esta
+ * emergencia: sin_invitar / invitada / aceptada / rechazada, y en qué emergencia
+ * están hoy. Es la pantalla de gestión de centros.
+ */
+const listActivations: RequestHandler = async (req, res) => {
+  try {
+    requireUser(req);
+    const emergencyId = idValido(res, req.params.emergencyId, 'emergency_id');
+    if (emergencyId == null) return;
+    if (!(await emergenciaPropia(emergencyId, res))) return;
+
+    res.json(await listActivationsStatus(pool, emergencyId));
+  } catch (err: any) {
+    manejarError(res, err, 'listActivations');
+  }
+};
+
+/** Centros efectivamente vinculados. Vista previa de "qué voy a compartir". */
+const listLinked: RequestHandler = async (req, res) => {
+  try {
+    requireUser(req);
+    const emergencyId = idValido(res, req.params.emergencyId, 'emergency_id');
+    if (emergencyId == null) return;
+    if (!(await emergenciaPropia(emergencyId, res))) return;
+
+    res.json(await listLinkedActivations(pool, emergencyId));
+  } catch (err: any) {
+    manejarError(res, err, 'listLinked');
+  }
+};
+
+/**
+ * Invita o REINVITA a las activaciones indicadas, sin importar su estado previo.
+ *
+ * Es la corrección posterior: sirve para las que rechazaron, para las que están en
+ * otra emergencia y deben trasladarse, y para las que quedaron fuera de la primera
+ * tanda porque entonces pertenecían a una emergencia que ya terminó.
+ */
+const inviteActivations: RequestHandler = async (req, res) => {
+  try {
+    const user = requireUser(req);
+    const municipalityId = requireTenant(req);
+    const emergencyId = idValido(res, req.params.emergencyId, 'emergency_id');
+    if (emergencyId == null) return;
+    const { activation_ids } = req.body ?? {};
+
+    if (!Array.isArray(activation_ids) || activation_ids.length === 0) {
+      res.status(400).json({ error: 'activation_ids debe ser un arreglo con al menos una activación.' });
+      return;
+    }
+    const emergencia = await emergenciaPropia(emergencyId, res);
+    if (!emergencia) return;
+    if (emergencia.ended_at != null) {
+      res.status(409).json({
+        error: 'EMERGENCIA_CERRADA',
+        message: 'No se pueden sumar centros a una emergencia cerrada.',
+      });
+      return;
+    }
+
+    const r = await invitarActivaciones(pool, {
+      emergency_id: emergencyId,
+      emergency_name: emergencia.name,
+      municipality_id: municipalityId,
+      activation_ids: activation_ids.map(Number).filter(Number.isFinite),
+      invited_by: user.user_id,
+    });
+
+    res.status(201).json({
+      emergency_id: emergencyId,
+      invitadas: r.activaciones,
+      avisos_a_encargados: r.avisos,
+    });
+  } catch (err: any) {
+    manejarError(res, err, 'inviteActivations');
+  }
+};
+
+/** Vinculación en lote, sin preguntarle al encargado. */
+const linkActivationsBulk: RequestHandler = async (req, res) => {
+  try {
+    const user = requireUser(req);
+    const emergencyId = idValido(res, req.params.emergencyId, 'emergency_id');
+    if (emergencyId == null) return;
+    const { activation_ids, all_open } = req.body ?? {};
+
+    if (!all_open && (!Array.isArray(activation_ids) || activation_ids.length === 0)) {
+      res.status(400).json({ error: 'Indica activation_ids o all_open: true.' });
+      return;
+    }
+    if (!(await emergenciaPropia(emergencyId, res))) return;
+
+    res.json(await vincularActivaciones(pool, {
+      emergency_id: emergencyId,
+      activation_ids,
+      all_open,
+      user_id: user.user_id,
+    }));
+  } catch (err: any) {
+    manejarError(res, err, 'linkActivationsBulk');
+  }
+};
+
+/**
+ * El encargado del centro responde la invitación.
+ *
+ * Rechazar NO desvincula: solo registra el rechazo. Antes ponía emergency_id en
+ * NULL, lo que sacaba al centro incluso de la emergencia en la que ya estaba.
  */
 const respondActivation: RequestHandler = async (req, res) => {
   try {
-    requireUser(req);
-    const emergencyId = parseInt(req.params.emergencyId, 10);
-    const activationId = parseInt(req.params.activationId, 10);
+    const user = requireUser(req);
+    const emergencyId = idValido(res, req.params.emergencyId, 'emergency_id');
+    if (emergencyId == null) return;
+    const activationId = idValido(res, req.params.activationId, 'activation_id');
+    if (activationId == null) return;
     const { accept } = req.body ?? {};
 
-    if (isNaN(emergencyId) || isNaN(activationId)) {
-      res.status(400).json({ error: 'Identificadores inválidos.' });
-      return;
-    }
     if (typeof accept !== 'boolean') {
       res.status(400).json({ error: 'Se requiere el campo accept (boolean).' });
       return;
     }
-    if (!(await comunaParticipa(emergencyId, res))) return;
+    if (!(await emergenciaPropia(emergencyId, res))) return;
 
-    // RLS acota el UPDATE a activaciones de la propia comuna.
-    const { rows } = await pool.query(
-      `UPDATE CentersActivations
-          SET emergency_id = $1
-        WHERE activation_id = $2 AND ended_at IS NULL
-        RETURNING activation_id, center_id, emergency_id`,
-      [accept ? emergencyId : null, activationId]
-    );
-
-    if (!rows[0]) {
-      res.status(404).json({ error: 'Activación no encontrada o ya cerrada.' });
-      return;
-    }
-
-    // Cierra el aviso en pantalla de esa activación.
-    await pool.query(
-      `UPDATE CenterNotifications
-          SET read_at = now(), updated_at = now()
-        WHERE emergency_id = $1 AND activation_id = $2 AND read_at IS NULL`,
-      [emergencyId, activationId]
-    );
-
-    res.json(rows[0]);
+    res.json(await responderActivacion(pool, {
+      emergency_id: emergencyId,
+      activation_id: activationId,
+      accept,
+      user_id: user.user_id,
+    }));
   } catch (err: any) {
     manejarError(res, err, 'respondActivation');
   }
@@ -555,9 +364,9 @@ router.post('/', createEmergency);
 // no interprete "activations" como un emergency_id.
 router.get('/activations/open', listOwnOpenActivations);
 router.patch('/activations/:activationId', linkActivation);
-router.get('/:emergencyId/participants', listParticipants);
-router.post('/:emergencyId/invite', inviteMunicipalities);
-router.post('/:emergencyId/respond', respondInvitation);
+router.get('/:emergencyId/activations', listActivations);
+router.get('/:emergencyId/linked-activations', listLinked);
+router.post('/:emergencyId/invite-activations', inviteActivations);
 router.post('/:emergencyId/link-activations', linkActivationsBulk);
 router.post('/:emergencyId/activations/:activationId/respond', respondActivation);
 router.patch('/:emergencyId/close', closeEmergency);

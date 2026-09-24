@@ -92,10 +92,12 @@ export async function setMunicipalityAdmin(
 }
 
 // ---------------------------------------------------------------
-// Emergencias
+// Emergencias LOCALES de la comuna
+//
+// Desde el rediseño de SuperEventos, una emergencia es SIEMPRE de una comuna
+// (nivel "emergencia menor") y agrupa las activaciones de sus centros. Invitar
+// comunas, el tablero y las ofertas viven en superEvents.service.ts.
 // ---------------------------------------------------------------
-
-export type EstadoParticipacion = "invitada" | "participando" | "rechazada";
 
 export type Emergency = {
   emergency_id: number;
@@ -103,19 +105,37 @@ export type Emergency = {
   type: string | null;
   started_at: string;
   ended_at: string | null;
-  created_by_municipality_id: number | null;
-  /** null si la comuna no fue invitada. */
-  mi_estado: EstadoParticipacion | null;
-  total_participando: string | number;
+  created_by_municipality_id: number;
+  /** SuperEvento al que aporta, si ya se sumó a alguno. */
+  super_event_id: number | null;
+  super_event_name: string | null;
+  super_event_level: "mayor" | "desastre" | "catastrofe" | null;
+  super_event_ended_at: string | null;
+  centros_vinculados: number;
 };
 
-export type EmergencyParticipant = {
-  municipality_id: number;
-  name: string;
-  shortname: string;
-  status: EstadoParticipacion;
-  joined_at: string;
+/** Estado de una activación frente a una emergencia, para la pantalla de gestión. */
+export type EstadoInvitacionCentro = "sin_invitar" | "invitada" | "aceptada" | "rechazada";
+
+export type ActivacionConEstado = {
+  activation_id: number;
+  center_id: string;
+  center_name: string;
+  started_at: string;
+  /** En qué emergencia está HOY. Puede ser otra: aceptar la trasladaría. */
+  emergencia_actual_id: number | null;
+  emergencia_actual_nombre: string | null;
+  estado_invitacion: EstadoInvitacionCentro;
+  invited_at: string | null;
   responded_at: string | null;
+};
+
+export type ActivacionVinculada = {
+  activation_id: number;
+  center_id: string;
+  center_name: string;
+  started_at: string;
+  prioridades: number;
 };
 
 export type OpenActivation = {
@@ -131,27 +151,49 @@ export async function listEmergencies(): Promise<Emergency[]> {
   return data;
 }
 
-export async function createEmergency(payload: { name: string; type?: string | null }) {
-  const { data } = await api.post<Emergency>("/emergencies", payload);
+/**
+ * Crea la emergencia. El backend avisa de inmediato a los encargados de las
+ * activaciones SUELTAS (sin emergencia) para que decidan si su centro se suma;
+ * devuelve cuántos avisos salieron.
+ */
+export async function createEmergency(payload: { name: string; type?: string | null }): Promise<
+  Emergency & { avisos_a_encargados: number; centros_convocados: number }
+> {
+  const { data } = await api.post("/emergencies", payload);
   return data;
 }
 
-export async function listParticipants(emergencyId: number): Promise<EmergencyParticipant[]> {
-  const { data } = await api.get<EmergencyParticipant[]>(`/emergencies/${emergencyId}/participants`);
+/** TODAS las activaciones abiertas de la comuna con su estado frente a la emergencia. */
+export async function listEmergencyActivations(
+  emergencyId: number
+): Promise<ActivacionConEstado[]> {
+  const { data } = await api.get<ActivacionConEstado[]>(`/emergencies/${emergencyId}/activations`);
   return data;
 }
 
-export async function inviteMunicipalities(emergencyId: number, municipalityIds: number[]) {
-  const { data } = await api.post(`/emergencies/${emergencyId}/invite`, {
-    municipality_ids: municipalityIds,
-  });
+/** Solo las efectivamente vinculadas: es lo que se compartirá si entra a un SuperEvento. */
+export async function listLinkedActivations(
+  emergencyId: number
+): Promise<ActivacionVinculada[]> {
+  const { data } = await api.get<ActivacionVinculada[]>(
+    `/emergencies/${emergencyId}/linked-activations`
+  );
   return data;
 }
 
 /**
- * El encargado de un centro decide si su activación se suma a la emergencia.
- * El administrador puede corregirlo después desde la vinculación masiva.
+ * Invita o REINVITA centros, sin importar su estado previo: sirve para los que
+ * rechazaron, los que están en otra emergencia y deben trasladarse, y los que
+ * quedaron fuera de la primera tanda.
  */
+export async function inviteActivations(emergencyId: number, activationIds: number[]) {
+  const { data } = await api.post(`/emergencies/${emergencyId}/invite-activations`, {
+    activation_ids: activationIds,
+  });
+  return data;
+}
+
+/** El encargado responde. Rechazar NO desvincula el centro: solo registra el rechazo. */
 export async function respondActivation(emergencyId: number, activationId: number, accept: boolean) {
   const { data } = await api.post(
     `/emergencies/${emergencyId}/activations/${activationId}/respond`,
@@ -160,16 +202,7 @@ export async function respondActivation(emergencyId: number, activationId: numbe
   return data;
 }
 
-/** Acepta o rechaza la invitación de la propia comuna. Solo su administrador puede. */
-export async function respondInvitation(emergencyId: number, accept: boolean) {
-  const { data } = await api.post(`/emergencies/${emergencyId}/respond`, { accept });
-  return data;
-}
-
-/**
- * Cierra la emergencia. Devuelve cuántas activaciones siguen abiertas: el cierre es
- * informativo y NO corta el acceso intercomunal, así que la UI debe advertirlo.
- */
+/** Cierra la emergencia local. No corta la colaboración: eso lo hace cerrar el SuperEvento. */
 export async function closeEmergency(emergencyId: number): Promise<{
   emergency_id: number;
   name: string;
@@ -185,6 +218,7 @@ export async function listOpenActivations(): Promise<OpenActivation[]> {
   return data;
 }
 
+/** Vinculación directa del administrador, sin preguntarle al encargado. */
 export async function linkActivations(
   emergencyId: number,
   payload: { activation_ids?: number[]; all_open?: boolean }

@@ -25,13 +25,16 @@ export const paths = {
     municipalities: "/superadmin/municipalidades",
     municipalityDetailPattern: "/superadmin/municipalidades/:municipalityId",
     municipalityDetail: (id: string | number) => `/superadmin/municipalidades/${id}`,
-    emergencies: "/superadmin/emergencias",
+    superEvents: "/superadmin/supereventos",
   },
 
-  // Emergencias de la comuna (admin municipal)
+  // Emergencias LOCALES de la comuna (admin municipal)
   emergencies: "/emergencias",
-  intermunicipalBoard: "/emergencias/tablero",
-  supportOffers: "/emergencias/ofertas",
+
+  // SuperEventos: la colaboración intermunicipal vive acá, no en la emergencia.
+  superEvents: "/supereventos",
+  intermunicipalBoard: "/supereventos/tablero",
+  supportOffers: "/supereventos/ofertas",
 
   // Perfil y mis centros
   notifications: '/notifications', 

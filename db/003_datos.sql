@@ -898,23 +898,36 @@ INSERT INTO FamilyGroupMembers (family_id, person_id, parentesco) VALUES
 
 
 -- ==========================================================
--- EMERGENCIA DE EJEMPLO (colaboración intermunicipal)
--- Regional: la declara el Super Administrador, por eso
--- created_by_municipality_id queda NULL.
+-- SUPEREVENTO DE EJEMPLO (colaboración intermunicipal)
+--
+-- Desde 002d la colaboración NO vive en la emergencia. Lo que se siembra es:
+--   - SuperEvento 1, nivel 'mayor', creado por el Super Administrador.
+--   - Emergencia 1, LOCAL de Valparaíso, aportada a ese SuperEvento.
+--
+-- La emergencia de Viña y su participación se siembran en 005_datos_validacion.sql,
+-- donde ya existen los usuarios de esa comuna.
 -- ==========================================================
-INSERT INTO Emergencies (emergency_id, name, type, created_by, created_by_municipality_id)
-VALUES (1, 'Incendio forestal Valparaíso 2024', 'incendio',
+INSERT INTO SuperEvents (super_event_id, name, level, type, description, created_by, created_by_municipality_id)
+VALUES (1, 'Incendio forestal región de Valparaíso 2024', 'mayor', 'incendio',
+        'Sobrepasa la capacidad de respuesta comunal: requiere apoyo provincial y regional.',
         (SELECT user_id FROM Users WHERE username = 'superadmin'), NULL);
+SELECT setval('superevents_super_event_id_seq', (SELECT MAX(super_event_id) FROM SuperEvents));
+
+-- Toda emergencia es LOCAL de una comuna: created_by_municipality_id es NOT NULL.
+INSERT INTO Emergencies (emergency_id, name, type, created_by, created_by_municipality_id, super_event_id)
+VALUES (1, 'Incendio forestal Valparaíso 2024', 'incendio',
+        (SELECT user_id FROM Users WHERE username = 'admin'), 1, 1);
 SELECT setval('emergencies_emergency_id_seq', (SELECT MAX(emergency_id) FROM Emergencies));
 
--- Valparaíso y Viña ya participan; Quilpué queda INVITADA (pendiente de responder) y
--- Concón sin fila. Así el flujo de invitación se puede probar de punta a punta desde el
--- primer arranque, y sirve para verificar que una comuna invitada todavía NO ve las
--- prioridades ajenas.
-INSERT INTO EmergencyParticipants (emergency_id, municipality_id, status, invited_by) VALUES
-(1, 1, 'participando', NULL),
-(1, 2, 'participando', NULL),
-(1, 3, 'invitada', (SELECT user_id FROM Users WHERE username = 'superadmin'));
+-- Valparaíso participa (aporta su emergencia); Quilpué queda INVITADA (pendiente de
+-- responder) y Concón sin fila. Así el flujo de invitación se puede probar de punta a
+-- punta desde el primer arranque, y sirve para verificar que una comuna invitada
+-- todavía NO ve las prioridades ajenas.
+--
+-- Viña entra en 005: su emergencia necesita usuarios que aún no existen acá.
+INSERT INTO SuperEventParticipants (super_event_id, municipality_id, status, invited_by, responded_at) VALUES
+(1, 1, 'participando', NULL, now()),
+(1, 3, 'invitada', (SELECT user_id FROM Users WHERE username = 'superadmin'), NULL);
 
 -- La notificación en pantalla de esta invitación NO se siembra aquí: los usuarios de
 -- Quilpué se crean más abajo en este mismo archivo, así que el SELECT del destinatario
@@ -925,6 +938,17 @@ INSERT INTO EmergencyParticipants (emergency_id, municipality_id, status, invite
 -- queda local (emergency_id NULL) para ejercitar ambos caminos.
 UPDATE CentersActivations SET emergency_id = 1
 WHERE center_id IN ('VALPO-C001', 'VALPO-C002');
+
+-- Esas dos entraron por vinculación del administrador, no por invitación aceptada.
+-- Se registran igual en EmergencyActivationInvitations para que la pantalla de gestión
+-- no las muestre como "sin_invitar" estando dentro (es lo mismo que hace
+-- linkActivationsBulk en el backend).
+INSERT INTO EmergencyActivationInvitations
+  (emergency_id, activation_id, municipality_id, status, responded_by, responded_at)
+SELECT 1, ca.activation_id, 1, 'aceptada',
+       (SELECT user_id FROM Users WHERE username = 'admin'), now()
+FROM CentersActivations ca
+WHERE ca.emergency_id = 1 AND ca.ended_at IS NULL;
 
 -- ==========================================================
 -- COMUNAS ADICIONALES: Viña del Mar (2), Quilpué (3), Concón (4)

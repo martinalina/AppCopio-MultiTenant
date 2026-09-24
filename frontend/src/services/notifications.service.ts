@@ -10,7 +10,7 @@ export type NotificationStatus = 'queued' | 'sent' | 'failed';
  * backend; puede venir null en filas antiguas.
  */
 export type NotificationKind =
-  | 'emergency_invitation'
+  | 'super_event_invitation'
   | 'activation_invitation'
   | 'support_offer'
   | 'volunteer_contact';
@@ -24,11 +24,16 @@ export interface CenterNotification {
   center_id: string | null;
   center_name?: string;
   municipality_id?: number | null;
-  /** Si viene, es una invitación a esa emergencia. */
+  /** Emergencia LOCAL a la que se refiere el aviso (invitación de un centro). */
   emergency_id?: number | null;
+  /** Si viene, es una invitación a ese SuperEvento. */
+  super_event_id?: number | null;
   kind?: NotificationKind | null;
   emergency_name?: string | null;
   emergency_ended_at?: string | null;
+  super_event_name?: string | null;
+  super_event_level?: "mayor" | "desastre" | "catastrofe" | null;
+  super_event_ended_at?: string | null;
   activation_id?: number | null;
   destinatary_id?: number | null;
   destinatary_name: string | null;

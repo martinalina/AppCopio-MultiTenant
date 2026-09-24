@@ -50,8 +50,10 @@ import CenterRequestsPage from "@/pages/CenterRequestPage/CenterRequestsPage";
 import MunicipalitiesPage from "@/pages/SuperAdmin/MunicipalitiesPage";
 import MunicipalityDetailPage from "@/pages/SuperAdmin/MunicipalityDetailPage";
 import EmergenciesPage from "@/pages/Emergencies/EmergenciesPage";
-import IntermunicipalBoardPage from "@/pages/Emergencies/IntermunicipalBoardPage";
-import SupportOffersPage from "@/pages/Emergencies/SupportOffersPage";
+import SuperEventsPage from "@/pages/SuperEvents/SuperEventsPage";
+import IntermunicipalBoardPage from "@/pages/SuperEvents/IntermunicipalBoardPage";
+import SupportOffersPage from "@/pages/SuperEvents/SupportOffersPage";
+import SuperAdminSuperEventsPage from "@/pages/SuperAdmin/SuperEventsPage";
 
 
 export default function App() {
@@ -97,9 +99,11 @@ export default function App() {
                   Super Administrador y una ruta duplicada la ganaría este bloque. */}
               <Route path={paths.myCenters} element={<MisCentrosPage />} />
               <Route path={paths.notifications} element={<NotificationsPage />} />
-              {/* Emergencias: solo el administrador de la comuna decide participar. */}
+              {/* Emergencias locales y SuperEventos: solo el administrador de la
+                  comuna decide participar y comprometer datos con otras comunas. */}
               <Route element={<ProtectedRoute allowedRoleIds={[1]} checkSupportAdmin={true} />}>
                 <Route path={paths.emergencies} element={<EmergenciesPage />} />
+                <Route path={paths.superEvents} element={<SuperEventsPage />} />
                 <Route path={paths.intermunicipalBoard} element={<IntermunicipalBoardPage />} />
                 <Route path={paths.supportOffers} element={<SupportOffersPage />} />
               </Route>
@@ -149,7 +153,9 @@ export default function App() {
             <Route element={<MainLayout />}>
               <Route path={paths.superadmin.municipalities} element={<MunicipalitiesPage />} />
               <Route path={paths.superadmin.municipalityDetailPattern} element={<MunicipalityDetailPage />} />
-              <Route path={paths.superadmin.emergencies} element={<EmergenciesPage />} />
+              {/* El Super Administrador ya no crea emergencias (no tiene comuna):
+                  crea y agrupa SuperEventos, que es lo que aquellas querian ser. */}
+              <Route path={paths.superadmin.superEvents} element={<SuperAdminSuperEventsPage />} />
             </Route>
           </Route>
 

@@ -34,6 +34,7 @@ export async function createNotification(db: Db, input: CreateNotificationInput)
   const {
     center_id = null,
     municipality_id = null,
+    super_event_id = null,
     emergency_id = null,
     activation_id = null,
     destinatary = null,
@@ -51,13 +52,14 @@ export async function createNotification(db: Db, input: CreateNotificationInput)
   // crear notificación en BD
   const q = `
     INSERT INTO CenterNotifications
-      (center_id, municipality_id, emergency_id, activation_id, destinatary, title, message, event_at, channel, kind)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, now()), $9, $10)
+      (center_id, municipality_id, super_event_id, emergency_id, activation_id, destinatary, title, message, event_at, channel, kind)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, now()), $10, $11)
     RETURNING *;
   `;
   const { rows } = await db.query(q, [
     center_id,
     municipality_id,
+    super_event_id,
     emergency_id,
     activation_id,
     destinatary,
@@ -88,6 +90,7 @@ export async function createNotification(db: Db, input: CreateNotificationInput)
     notification_id: String(r.notification_id),
     center_id: r.center_id != null ? String(r.center_id) : null,
     municipality_id: r.municipality_id ?? null,
+    super_event_id: r.super_event_id ?? null,
     emergency_id: r.emergency_id ?? null,
     kind: r.kind ?? null,
     center_name: '', // sin JOIN no lo tenemos

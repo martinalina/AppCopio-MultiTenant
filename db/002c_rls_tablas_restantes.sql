@@ -1,5 +1,5 @@
 -- ==========================================================
--- 002c: RLS PARA LAS TABLAS RESTANTES + OFERTAS DE APOYO
+-- 002c: RLS PARA LAS TABLAS RESTANTES + POLÍTICAS DE LAS OFERTAS DE APOYO
 --
 -- Cierra el hueco declarado en la migración: 16 tablas sin política de
 -- seguridad a nivel de fila. No filtraban datos a través de consultas que
@@ -313,17 +313,19 @@ ALTER TABLE RefreshTokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE RefreshTokens FORCE ROW LEVEL SECURITY;
 
 -- ----------------------------------------------------------
--- 6. Ofertas de apoyo intercomunal: corrección de políticas
+-- 6. Ofertas de apoyo intercomunal: lectura y cambio de estado
 --
---    Se escribieron en la Fase 1 sin código que las ejercitara y tienen dos
---    defectos:
---      a) la lectura dejaba que CUALQUIER comuna participante viera TODAS las
---         ofertas de la emergencia, incluidas las dirigidas a otras comunas;
---      b) la escritura solo permitía a la comuna de ORIGEN, así que la comuna
---         que RECIBE la oferta no podía aceptarla ni rechazarla.
+--    Van acá y no en 002a porque ambas resuelven la comuna DESTINO a través de
+--    Centers, y de ahí salen las dos reglas:
+--      a) una oferta la ven SOLO las dos comunas involucradas —la que ofrece y la
+--         que recibe—, no todas las participantes del evento;
+--      b) la que RECIBE tiene que poder aceptarla o rechazarla, así que el UPDATE
+--         no puede estar limitado a la comuna de origen.
+--
+--    La política de INSERT (cmso_own_write, en 002a) sí es solo de origen: quien
+--    ofrece es quien crea la oferta.
 -- ----------------------------------------------------------
 
-DROP POLICY cmso_participant_read ON CrossMunicipalSupportOffers;
 CREATE POLICY cmso_read ON CrossMunicipalSupportOffers
   FOR SELECT
   USING (
@@ -334,7 +336,6 @@ CREATE POLICY cmso_read ON CrossMunicipalSupportOffers
     )
   );
 
-DROP POLICY cmso_own_update ON CrossMunicipalSupportOffers;
 CREATE POLICY cmso_update ON CrossMunicipalSupportOffers
   FOR UPDATE
   USING (
@@ -351,172 +352,14 @@ CREATE POLICY cmso_update ON CrossMunicipalSupportOffers
   );
 
 -- ----------------------------------------------------------
--- 7. Tablero intercomunal
+-- Nota: el tablero intercomunal, el aviso de oferta a la comuna destino y el
+-- listado de ofertas con nombres resueltos NO están acá.
 --
---    Hermana de emergency_shared_center_ids(): devuelve los centros compartidos
---    con los campos que la regla 6 del proyecto permite exponer entre comunas.
---    NUNCA CentersDescription, FamilyGroups, Persons ni cantidades de inventario.
+-- Las tres funciones (super_event_shared_centers, notify_support_offer y
+-- support_offers_visible) necesitan CrossMunicipalSupportOffers.super_event_id,
+-- columna que agrega 002d. Postgres valida el cuerpo de una función SQL al
+-- crearla, así que definirlas antes falla. Viven en 002d.
 -- ----------------------------------------------------------
-
-CREATE OR REPLACE FUNCTION emergency_shared_centers(p_emergency_id INT)
-RETURNS TABLE (
-  center_id VARCHAR, name TEXT, latitude DECIMAL, longitude DECIMAL,
-  capacity INT, fullness_percentage INT, operational_status TEXT,
-  municipality_id INT, municipality_shortname TEXT, activation_id INT
-)
-LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE AS $$
-  SELECT c.center_id, c.name::TEXT, c.latitude, c.longitude,
-         c.capacity, c.fullness_percentage, c.operational_status::TEXT,
-         c.municipality_id, m.shortname::TEXT, ca.activation_id
-  FROM Centers c
-  JOIN Municipalities m ON m.municipality_id = c.municipality_id
-  JOIN CentersActivations ca
-    ON ca.center_id = c.center_id AND ca.ended_at IS NULL
-   AND ca.emergency_id = p_emergency_id
-  JOIN EmergencyParticipants duena
-    ON duena.emergency_id = p_emergency_id
-   AND duena.municipality_id = c.municipality_id
-   AND duena.status = 'participando'
-  WHERE c.is_active = TRUE
-    AND (
-      is_superadmin()
-      OR EXISTS (
-        SELECT 1 FROM EmergencyParticipants yo
-        WHERE yo.emergency_id = p_emergency_id
-          AND yo.municipality_id = current_tenant()
-          AND yo.status = 'participando'
-      )
-    )
-  ORDER BY m.name, c.name;
-$$;
-
-
--- ----------------------------------------------------------
--- 7b. Aviso de oferta a la comuna DESTINO
---
---    La política centernotif_tenant solo deja escribir avisos para la propia
---    comuna, así que la comuna que ofrece no puede notificar a la que recibe —
---    y avisarle es justamente el punto de una oferta de apoyo.
---
---    Se resuelve con una función SECURITY DEFINER deliberadamente estrecha: no
---    recibe texto libre ni destinatario, solo el id de la oferta, y verifica que
---    quien llama sea la comuna de ORIGEN de esa oferta. El mensaje se compone
---    dentro de la función.
--- ----------------------------------------------------------
-
-CREATE OR REPLACE FUNCTION notify_support_offer(p_offer_id INT) RETURNS UUID
-LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
-DECLARE
-  v_offer RECORD;
-  v_from  TEXT;
-  v_id    UUID;
-BEGIN
-  SELECT o.offer_id, o.emergency_id, o.from_municipality_id, o.target_center_id,
-         c.municipality_id AS target_municipality_id, c.name AS center_name
-    INTO v_offer
-    FROM CrossMunicipalSupportOffers o
-    JOIN Centers c ON c.center_id = o.target_center_id
-   WHERE o.offer_id = p_offer_id;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'OFERTA_NO_EXISTE';
-  END IF;
-
-  -- La lectura de arriba omite RLS por ser SECURITY DEFINER, así que esta
-  -- verificación es lo único que impide notificar a nombre de otra comuna.
-  IF v_offer.from_municipality_id IS DISTINCT FROM current_tenant() THEN
-    RAISE EXCEPTION 'SOLO_LA_COMUNA_DE_ORIGEN_PUEDE_AVISAR';
-  END IF;
-
-  SELECT name INTO v_from FROM Municipalities
-   WHERE municipality_id = v_offer.from_municipality_id;
-
-  -- Una fila POR PERSONA que pueda actuar sobre la oferta: el administrador de la
-  -- comuna destino y sus trabajadores con es_apoyo_admin, que son los mismos que el
-  -- guard de rutas deja entrar a la bandeja de ofertas. read_at es por fila, así que
-  -- un aviso compartido dejaría que el primero en leerlo apague el badge de todos.
-  INSERT INTO CenterNotifications
-    (center_id, municipality_id, emergency_id, destinatary, title, message, channel, kind)
-  SELECT
-    v_offer.target_center_id,
-    v_offer.target_municipality_id,
-    v_offer.emergency_id,
-    u.user_id,
-    'Ofrecimiento de apoyo de otra comuna',
-    v_from || ' ofrece apoyo para ' || v_offer.center_name ||
-      '. Revisa la oferta para aceptarla o rechazarla.',
-    'system',
-    'support_offer'
-  FROM Users u
-  WHERE u.municipality_id = v_offer.target_municipality_id
-    AND u.is_active = TRUE
-    AND (u.role_id = 1 OR u.es_apoyo_admin = TRUE)
-  RETURNING notification_id INTO v_id;
-
-  -- Si la comuna destino no tiene a nadie que pueda responder, el aviso queda dirigido
-  -- a la comuna para que no se pierda.
-  IF v_id IS NULL THEN
-    INSERT INTO CenterNotifications
-      (center_id, municipality_id, emergency_id, title, message, channel, kind)
-    VALUES (
-      v_offer.target_center_id,
-      v_offer.target_municipality_id,
-      v_offer.emergency_id,
-      'Ofrecimiento de apoyo de otra comuna',
-      v_from || ' ofrece apoyo para ' || v_offer.center_name ||
-        '. Revisa la oferta para aceptarla o rechazarla.',
-      'system',
-      'support_offer'
-    )
-    RETURNING notification_id INTO v_id;
-  END IF;
-
-  RETURN v_id;
-END;
-$$;
-
-
--- ----------------------------------------------------------
--- 7c. Listado de ofertas con datos para mostrar
---
---    El listado necesita el nombre del centro y de la comuna de DESTINO, pero un
---    JOIN normal a Centers pasa por RLS: la comuna que OFRECE no puede resolver
---    el nombre del centro ajeno y la fila salía sin destino.
---
---    Esta función replica exactamente la visibilidad de la política cmso_read
---    (origen, destino o superadmin) y resuelve los nombres del lado de la base.
--- ----------------------------------------------------------
-
-CREATE OR REPLACE FUNCTION support_offers_visible()
-RETURNS TABLE (
-  offer_id INT, emergency_id INT, emergency_name TEXT,
-  from_municipality_id INT, from_municipality_name TEXT,
-  target_center_id VARCHAR, target_center_name TEXT,
-  target_municipality_id INT, target_municipality_name TEXT,
-  item_id INT, item_name TEXT,
-  message TEXT, status TEXT, created_at TIMESTAMPTZ,
-  created_by INT, created_by_name TEXT
-)
-LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE AS $$
-  SELECT o.offer_id, o.emergency_id, e.name::TEXT,
-         o.from_municipality_id, mf.name::TEXT,
-         o.target_center_id, c.name::TEXT,
-         c.municipality_id, mt.name::TEXT,
-         o.item_id, p.name::TEXT,
-         o.message::TEXT, o.status::TEXT, o.created_at,
-         o.created_by, u.nombre::TEXT
-  FROM CrossMunicipalSupportOffers o
-  JOIN Emergencies e     ON e.emergency_id = o.emergency_id
-  JOIN Municipalities mf ON mf.municipality_id = o.from_municipality_id
-  JOIN Centers c         ON c.center_id = o.target_center_id
-  JOIN Municipalities mt ON mt.municipality_id = c.municipality_id
-  LEFT JOIN Products p   ON p.item_id = o.item_id
-  LEFT JOIN Users u      ON u.user_id = o.created_by
-  WHERE is_superadmin()
-     OR o.from_municipality_id = current_tenant()
-     OR c.municipality_id = current_tenant()
-  ORDER BY o.created_at DESC;
-$$;
 
 -- ----------------------------------------------------------
 -- 8. Permisos
@@ -532,9 +375,6 @@ REVOKE ALL ON FUNCTION refresh_token_revoke_by_id(BIGINT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION refresh_token_revoke_all(INT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION refresh_token_purge() FROM PUBLIC;
 REVOKE ALL ON FUNCTION refresh_token_stats() FROM PUBLIC;
-REVOKE ALL ON FUNCTION emergency_shared_centers(INT) FROM PUBLIC;
-REVOKE ALL ON FUNCTION notify_support_offer(INT) FROM PUBLIC;
-REVOKE ALL ON FUNCTION support_offers_visible() FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION refresh_token_issue(INT, TEXT, TEXT, TEXT, TIMESTAMPTZ) TO appcopio_app;
 GRANT EXECUTE ON FUNCTION refresh_token_find(INT, TEXT) TO appcopio_app;
@@ -543,6 +383,3 @@ GRANT EXECUTE ON FUNCTION refresh_token_revoke_by_id(BIGINT) TO appcopio_app;
 GRANT EXECUTE ON FUNCTION refresh_token_revoke_all(INT) TO appcopio_app;
 GRANT EXECUTE ON FUNCTION refresh_token_purge() TO appcopio_app;
 GRANT EXECUTE ON FUNCTION refresh_token_stats() TO appcopio_app;
-GRANT EXECUTE ON FUNCTION emergency_shared_centers(INT) TO appcopio_app;
-GRANT EXECUTE ON FUNCTION notify_support_offer(INT) TO appcopio_app;
-GRANT EXECUTE ON FUNCTION support_offers_visible() TO appcopio_app;

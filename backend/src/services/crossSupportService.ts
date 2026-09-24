@@ -4,7 +4,7 @@
 //
 // Regla dura del proyecto: entre comunas solo cruzan ubicación, capacidad, % de
 // llenado, estado operacional y prioridades. Nunca personas, familias, catastro
-// ni cantidades de inventario. El tablero se arma con emergency_shared_centers(),
+// ni cantidades de inventario. El tablero se arma con super_event_shared_centers(),
 // que ya limita los campos en la propia base de datos.
 import { Db } from '../types/db';
 
@@ -21,6 +21,9 @@ export type CentroCompartido = {
   municipality_id: number;
   municipality_shortname: string;
   activation_id: number;
+  /** Emergencia local que aporta este centro al SuperEvento. */
+  emergency_id: number;
+  emergency_name: string;
   prioridades: { item_id: number; item_name: string; priority: string }[];
 };
 
@@ -30,10 +33,10 @@ export type CentroCompartido = {
  * Excluye los centros de la propia comuna: el tablero es para ver a quién se le
  * puede ofrecer apoyo, y los propios ya se ven en el panel municipal.
  */
-export async function getBoard(db: Db, emergencyId: number, ownMunicipalityId: number | null) {
+export async function getBoard(db: Db, superEventId: number, ownMunicipalityId: number | null) {
   const { rows: centros } = await db.query(
-    `SELECT * FROM emergency_shared_centers($1)`,
-    [emergencyId]
+    `SELECT * FROM super_event_shared_centers($1)`,
+    [superEventId]
   );
 
   const ajenos = centros.filter((c: any) => c.municipality_id !== ownMunicipalityId);
@@ -87,7 +90,7 @@ export async function listOffers(
 export async function createOffer(
   db: Db,
   input: {
-    emergency_id: number;
+    super_event_id: number;
     target_center_id: string;
     item_id?: number | null;
     message?: string | null;
@@ -97,12 +100,12 @@ export async function createOffer(
 ) {
   const { rows } = await db.query(
     `INSERT INTO CrossMunicipalSupportOffers
-       (emergency_id, from_municipality_id, target_center_id, item_id, message, created_by)
+       (super_event_id, from_municipality_id, target_center_id, item_id, message, created_by)
      VALUES ($1, $2, $3, $4, $5, $6)
-     RETURNING offer_id, emergency_id, from_municipality_id, target_center_id,
+     RETURNING offer_id, super_event_id, from_municipality_id, target_center_id,
                item_id, message, status, created_at`,
     [
-      input.emergency_id,
+      input.super_event_id,
       input.from_municipality_id,
       input.target_center_id,
       input.item_id ?? null,

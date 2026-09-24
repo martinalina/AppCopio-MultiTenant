@@ -175,8 +175,9 @@ const setActivationStatus: RequestHandler = async (req, res) => {
     }
 
     // La emergencia es opcional: una activación local no necesita ninguna. Si viene,
-    // debe estar vigente y la comuna debe haber ACEPTADO participar; de lo contrario
-    // se estaría compartiendo información con una emergencia ajena.
+    // basta con que esté vigente: desde 002d toda emergencia es LOCAL de una comuna y
+    // la política emergencies_tenant_isolation ya impide ver las ajenas, así que no
+    // hace falta comprobar participación (eso ahora vive en el SuperEvento).
     let emergencyId: number | null = null;
     if (isActive && emergency_id != null) {
         emergencyId = Number(emergency_id);
@@ -185,19 +186,14 @@ const setActivationStatus: RequestHandler = async (req, res) => {
             return;
         }
         const { rows } = await pool.query(
-            `SELECT e.emergency_id
-               FROM Emergencies e
-               JOIN EmergencyParticipants ep
-                 ON ep.emergency_id = e.emergency_id
-                AND ep.municipality_id = current_tenant()
-                AND ep.status = 'participando'
-              WHERE e.emergency_id = $1 AND e.ended_at IS NULL`,
+            `SELECT emergency_id FROM Emergencies
+              WHERE emergency_id = $1 AND ended_at IS NULL`,
             [emergencyId]
         );
         if (rows.length === 0) {
             res.status(400).json({
                 error: 'EMERGENCIA_NO_DISPONIBLE',
-                message: 'La emergencia no está vigente o tu comuna no participa en ella.',
+                message: 'La emergencia no está vigente o no pertenece a tu comuna.',
             });
             return;
         }

@@ -61,8 +61,9 @@ export default function ActivateCenterDialog({
   const [saving, setSaving] = React.useState(false);
 
   // Cargar usuarios disponibles
-  // Al abrir, trae las emergencias vigentes donde la comuna ya participa: son las
-  // únicas a las que el backend permite colgar una activación.
+  // Al abrir, trae las emergencias vigentes de la comuna. Ya no hace falta filtrar
+  // por participación: desde el rediseño de SuperEventos toda emergencia es LOCAL y
+  // la política emergencies_tenant_isolation solo deja ver las propias.
   React.useEffect(() => {
     if (!open) return;
     let vivo = true;
@@ -70,7 +71,7 @@ export default function ActivateCenterDialog({
       try {
         const todas = await listEmergencies();
         if (!vivo) return;
-        setEmergencias(todas.filter((e) => !e.ended_at && e.mi_estado === "participando"));
+        setEmergencias(todas.filter((e) => !e.ended_at));
       } catch {
         if (vivo) setEmergencias([]);
       }

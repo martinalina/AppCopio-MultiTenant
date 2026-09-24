@@ -9,7 +9,8 @@ interface CenterNotification {
   title: string;
   message: string;
   event_at: string;
-  center_id: string;
+  /** null cuando el aviso va dirigido a la comuna y no a un centro. */
+  center_id: string | null;
   destinatary_name: string | null;
   destinatary_id?: number | null;
   status?: 'queued' | 'sent' | 'failed';
@@ -28,7 +29,7 @@ interface GroupedNotification {
   title: string;
   message: string;
   event_at: string;
-  center_id: string;
+  center_id: string | null;
   destinataries: Array<{ id?: number | null; name: string | null }>;
   status?: 'queued' | 'sent' | 'failed';
   read_at?: string | null;

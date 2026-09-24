@@ -1,4 +1,4 @@
-// src/components/emergency/OfferSupportDialog.tsx
+// src/components/superevent/OfferSupportDialog.tsx
 //
 // Diálogo para ofrecer apoyo a un centro de otra comuna. Vive fuera de la página
 // porque lo abren las dos vistas del tablero: el listado y el mapa.
@@ -12,13 +12,13 @@ import { createOffer, type CentroCompartido } from "@/services/crossSupport.serv
 
 type Props = {
   centro: CentroCompartido | null;
-  emergencyId: number | "";
+  superEventId: number | "";
   onClose: () => void;
   /** Se llama con el texto de confirmación cuando la oferta quedó registrada. */
   onSent: (aviso: string) => void;
 };
 
-export default function OfferSupportDialog({ centro, emergencyId, onClose, onSent }: Props) {
+export default function OfferSupportDialog({ centro, superEventId, onClose, onSent }: Props) {
   const [itemId, setItemId] = React.useState<number | "">("");
   const [mensaje, setMensaje] = React.useState("");
   const [enviando, setEnviando] = React.useState(false);
@@ -34,12 +34,12 @@ export default function OfferSupportDialog({ centro, emergencyId, onClose, onSen
   }, [centro?.center_id]);
 
   const enviar = async () => {
-    if (!centro || emergencyId === "") return;
+    if (!centro || superEventId === "") return;
     setEnviando(true);
     setError(null);
     try {
       await createOffer({
-        emergency_id: Number(emergencyId),
+        super_event_id: Number(superEventId),
         target_center_id: centro.center_id,
         item_id: itemId === "" ? null : Number(itemId),
         message: mensaje.trim() || null,
@@ -68,7 +68,7 @@ export default function OfferSupportDialog({ centro, emergencyId, onClose, onSen
         <Stack spacing={2}>
           <FormControl fullWidth size="small">
             <InputLabel id="item-label">Ítem (opcional)</InputLabel>
-            <Select
+            <Select<number | "">
               labelId="item-label" label="Ítem (opcional)" value={itemId}
               onChange={(e) => setItemId(e.target.value === "" ? "" : Number(e.target.value))}
             >

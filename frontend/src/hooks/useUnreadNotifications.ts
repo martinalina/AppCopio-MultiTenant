@@ -10,13 +10,19 @@ export interface AppNotification {
   /** Si viene junto a emergency_id, el aviso es para el encargado de ESA activación. */
   activation_id?: number | null;
   municipality_id: number | null;
-  /** Si viene, la notificación es una invitación a esa emergencia. */
+  /** Emergencia LOCAL a la que se refiere el aviso (invitación de un centro). */
   emergency_id: number | null;
+  /** Si viene, la notificación es una invitación a ese SuperEvento. */
+  super_event_id?: number | null;
   /** Clase de aviso: distingue invitación de comuna, de centro y oferta de apoyo. */
   kind?: NotificationKind | null;
   emergency_name?: string | null;
   /** Si viene, la emergencia ya terminó y la invitación no tiene sentido. */
   emergency_ended_at?: string | null;
+  super_event_name?: string | null;
+  super_event_level?: "mayor" | "desastre" | "catastrofe" | null;
+  /** Si viene, el SuperEvento ya cerró y la invitación no tiene sentido. */
+  super_event_ended_at?: string | null;
   title: string;
   message: string;
   event_at: string;
@@ -29,7 +35,7 @@ const INTERVALO_MS = 30000;
  * Sondea el buzón del usuario cada 30s.
  *
  * Devuelve también la lista (antes solo contaba y descartaba las filas), porque el
- * aviso en pantalla de invitación a emergencia necesita el contenido, no solo el total.
+ * aviso en pantalla de invitación necesita el contenido, no solo el total.
  */
 export function useUnreadNotifications() {
   const { user, isAuthenticated } = useAuth();

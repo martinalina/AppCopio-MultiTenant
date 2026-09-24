@@ -40,8 +40,13 @@ CREATE TABLE Municipalities (
     CONSTRAINT municipalities_shortname_len_chk CHECK (char_length(shortname) BETWEEN 2 AND 5)
 );
 
--- created_by_municipality_id NULL  => emergencia regional declarada por el Super Administrador.
--- created_by_municipality_id <> NULL => declarada por esa comuna (alcance local que puede escalar).
+-- Evento LOCAL de UNA comuna: agrupa las activaciones de sus centros y es su
+-- unidad de organización interna (nivel "emergencia menor"). created_by_municipality_id
+-- es NOT NULL: toda emergencia tiene dueño, y el Super Administrador no crea
+-- emergencias porque no tiene comuna.
+--
+-- La colaboración entre comunas NO vive acá: vive en SuperEvents (002d), que agrupa
+-- emergencias de varias comunas. 002d le agrega a esta tabla la columna super_event_id.
 CREATE TABLE Emergencies (
     emergency_id                SERIAL PRIMARY KEY,
     name                        TEXT NOT NULL,
@@ -49,19 +54,13 @@ CREATE TABLE Emergencies (
     started_at                  TIMESTAMPTZ NOT NULL DEFAULT now(),
     ended_at                    TIMESTAMPTZ,
     created_by                  INT REFERENCES Users(user_id) ON DELETE SET NULL,
-    created_by_municipality_id  INT REFERENCES Municipalities(municipality_id)
+    created_by_municipality_id  INT NOT NULL REFERENCES Municipalities(municipality_id)
 );
 
-CREATE TABLE EmergencyParticipants (
-    emergency_id     INT NOT NULL REFERENCES Emergencies(emergency_id) ON DELETE CASCADE,
-    municipality_id  INT NOT NULL REFERENCES Municipalities(municipality_id) ON DELETE CASCADE,
-    joined_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-    PRIMARY KEY (emergency_id, municipality_id)
-);
-
+-- El evento al que pertenece la oferta (super_event_id) lo agrega 002d: apunta a
+-- SuperEvents, que todavía no existe en este script.
 CREATE TABLE CrossMunicipalSupportOffers (
     offer_id             SERIAL PRIMARY KEY,
-    emergency_id         INT NOT NULL REFERENCES Emergencies(emergency_id) ON DELETE CASCADE,
     from_municipality_id INT NOT NULL REFERENCES Municipalities(municipality_id),
     target_center_id     VARCHAR(16) NOT NULL REFERENCES Centers(center_id),
     item_id              INT REFERENCES Products(item_id),
@@ -336,56 +335,24 @@ END $$;
 ALTER TABLE Emergencies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE Emergencies FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY emergencies_participant_read ON Emergencies
-  FOR SELECT
-  USING (
-    is_superadmin()
-    OR created_by_municipality_id = current_tenant()
-    OR emergency_id IN (SELECT ep.emergency_id FROM EmergencyParticipants ep WHERE ep.municipality_id = current_tenant())
-  );
-
--- Alcance distinto según quién declara: el superadmin puede declarar una
--- regional (created_by_municipality_id NULL); un admin municipal solo puede
--- declarar una a nombre de su propia comuna.
-CREATE POLICY emergencies_write ON Emergencies
-  FOR INSERT
+-- Aislamiento de tenant puro: una emergencia es de su comuna y de nadie más. La
+-- lectura ampliada entre comunas no pasa por acá, la resuelven las funciones
+-- super_event_* de 002d.
+CREATE POLICY emergencies_tenant_isolation ON Emergencies
+  USING      (is_superadmin() OR created_by_municipality_id = current_tenant())
   WITH CHECK (is_superadmin() OR created_by_municipality_id = current_tenant());
-
-CREATE POLICY emergencies_update ON Emergencies
-  FOR UPDATE
-  USING (is_superadmin() OR created_by_municipality_id = current_tenant())
-  WITH CHECK (is_superadmin() OR created_by_municipality_id = current_tenant());
-
-ALTER TABLE EmergencyParticipants ENABLE ROW LEVEL SECURITY;
-ALTER TABLE EmergencyParticipants FORCE ROW LEVEL SECURITY;
-
-CREATE POLICY emergency_participants_read ON EmergencyParticipants
-  FOR SELECT
-  USING (is_superadmin() OR municipality_id = current_tenant());
-
--- Una comuna se une a sí misma; nadie inscribe a otra.
-CREATE POLICY emergency_participants_write ON EmergencyParticipants
-  FOR INSERT WITH CHECK (is_superadmin() OR municipality_id = current_tenant());
-
-CREATE POLICY emergency_participants_delete ON EmergencyParticipants
-  FOR DELETE USING (is_superadmin() OR municipality_id = current_tenant());
+-- Sin política de DELETE: nadie borra una emergencia.
 
 ALTER TABLE CrossMunicipalSupportOffers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE CrossMunicipalSupportOffers FORCE ROW LEVEL SECURITY;
-
-CREATE POLICY cmso_participant_read ON CrossMunicipalSupportOffers
-  FOR SELECT
-  USING (
-    is_superadmin()
-    OR emergency_id IN (SELECT ep.emergency_id FROM EmergencyParticipants ep WHERE ep.municipality_id = current_tenant())
-  );
 
 -- Escritura: SOLO la comuna de origen.
 CREATE POLICY cmso_own_write ON CrossMunicipalSupportOffers
   FOR INSERT WITH CHECK (from_municipality_id = current_tenant());
 
-CREATE POLICY cmso_own_update ON CrossMunicipalSupportOffers
-  FOR UPDATE USING (from_municipality_id = current_tenant()) WITH CHECK (from_municipality_id = current_tenant());
+-- Las políticas de lectura y de cambio de estado viven en 002c: necesitan resolver
+-- la comuna DESTINO a través de Centers, y son las que permiten que quien recibe la
+-- oferta pueda aceptarla o rechazarla.
 
 -- Municipalities: sin tenant propio. Lectura abierta, escritura solo superadmin.
 ALTER TABLE Municipalities ENABLE ROW LEVEL SECURITY;
@@ -406,18 +373,13 @@ CREATE POLICY municipalities_superadmin_update ON Municipalities
 ALTER TABLE CenterItemPriority ENABLE ROW LEVEL SECURITY;
 ALTER TABLE CenterItemPriority FORCE ROW LEVEL SECURITY;
 
-CREATE POLICY cip_intermunicipal_read ON CenterItemPriority
-  FOR SELECT
-  USING (
-    is_superadmin()
-    OR center_id IN (
-        SELECT c.center_id
-        FROM Centers c
-        JOIN CentersActivations ca ON ca.center_id = c.center_id AND ca.ended_at IS NULL
-        JOIN EmergencyParticipants ep ON ep.emergency_id = ca.emergency_id
-        WHERE c.is_active = TRUE AND ep.municipality_id = current_tenant()
-    )
-  );
+-- Las políticas de LECTURA de esta tabla viven más adelante, porque ninguna se
+-- puede expresar acá:
+--   · cip_own_read y cip_public_read -> 002b
+--   · cip_intermunicipal_read        -> 002d, vía super_event_shared_center_ids()
+-- Resolver el conjunto compartido desde una subconsulta en línea no funciona:
+-- Centers y CentersActivations tienen RLS, así que solo devolvería centros de la
+-- propia comuna y la lectura intercomunal nunca vería nada ajeno.
 
 -- Escritura: SOLO sobre centros de la propia comuna.
 CREATE POLICY cip_own_write ON CenterItemPriority

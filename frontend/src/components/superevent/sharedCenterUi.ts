@@ -1,4 +1,4 @@
-// src/components/emergency/sharedCenterUi.ts
+// src/components/superevent/sharedCenterUi.ts
 //
 // Vocabulario visual compartido por las dos vistas del tablero intercomunal, para
 // que un centro se lea igual en la tarjeta que en el pin del mapa.

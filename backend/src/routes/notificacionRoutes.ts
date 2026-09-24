@@ -166,7 +166,7 @@ const getByCenter: RequestHandler = async (req, res, next) => {
 // El frontend ya llamaba a este endpoint y a /mark-all-read desde
 // services/notifications.service.ts, pero NINGUNO existía: daban 404.
 // Incluye lo dirigido personalmente al usuario y los avisos de su comuna
-// (las invitaciones a emergencias llegan por esta vía). RLS ya acota todo
+// (las invitaciones a SuperEventos llegan por esta vía). RLS ya acota todo
 // lo demás al tenant del request.
 // ---------------------------------------------
 const getMine: RequestHandler = async (req, res, next) => {
@@ -174,14 +174,17 @@ const getMine: RequestHandler = async (req, res, next) => {
     const user = requireUser(req);
     const { rows } = await pool.query(
       `SELECT cn.notification_id, cn.center_id, COALESCE(c.name, '') AS center_name,
-              cn.municipality_id, cn.emergency_id, e.name AS emergency_name,
-              e.ended_at AS emergency_ended_at,
+              cn.municipality_id,
+              cn.emergency_id, e.name AS emergency_name, e.ended_at AS emergency_ended_at,
+              cn.super_event_id, se.name AS super_event_name, se.level AS super_event_level,
+              se.ended_at AS super_event_ended_at,
               cn.activation_id, cn.destinatary AS destinatary_id,
               cn.kind, cn.title, cn.message, cn.event_at, cn.channel, cn.status,
               cn.sent_at, cn.read_at, cn.error, cn.created_at, cn.updated_at
          FROM CenterNotifications cn
          LEFT JOIN Centers c ON c.center_id = cn.center_id
          LEFT JOIN Emergencies e ON e.emergency_id = cn.emergency_id
+         LEFT JOIN SuperEvents se ON se.super_event_id = cn.super_event_id
         WHERE cn.destinatary = $1
            OR (cn.municipality_id IS NOT NULL AND cn.destinatary IS NULL)
         ORDER BY cn.event_at DESC

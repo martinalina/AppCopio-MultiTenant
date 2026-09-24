@@ -7,9 +7,10 @@
 # intercomunal, continuidad funcional, canal público e higiene de sesión. Lo visual
 # (mapa, badges, modales) va en docs/03_guion_de_validacion.md.
 #
-# Ninguna comprobación deja escrituras: las dos que ejercitan una escritura prohibida
-# corren dentro de BEGIN … ROLLBACK, y el relevo de administrador se rechaza en el
-# servicio antes de tocar la base.
+# Ninguna comprobación deja datos detrás. Las que ejercitan una escritura —permitida o
+# prohibida— corren dentro de BEGIN … ROLLBACK; el relevo de administrador se rechaza en
+# el servicio antes de tocar la base; y la única que escribe de verdad (el alta de una
+# municipalidad, que solo se puede acreditar creándola) borra lo que creó al terminar.
 #
 # Uso:
 #   docker compose down -v && docker compose up -d
@@ -92,6 +93,24 @@ psql_tenant_espera_error() {
     -c "$2" \
     -c 'ROLLBACK' 2>&1)
   if grep -qi "$3" <<<"$salida"; then echo "bloqueado"; else echo "FUGA"; fi
+}
+
+# Ejecuta una escritura que la base debe PERMITIR, como appcopio_app y dentro de
+# BEGIN … ROLLBACK. Es la hermana de psql_tenant_espera_error: sirve para acreditar que
+# algo SÍ se puede hacer, sin dejar la fila escrita.
+#
+# Acepta varias sentencias en un solo argumento, lo que permite cambiar de tenant a
+# mitad de la transacción: es la única forma de comprobar que dos comunas distintas
+# pueden escribir el mismo valor sin colisionar entre sí.
+# Uso: psql_espera_ok <sentencias>
+psql_espera_ok() {
+  local salida
+  salida=$(docker compose exec -T db psql -U appcopio_app -d appcopio_mt_db -tAq \
+    -v ON_ERROR_STOP=0 \
+    -c 'BEGIN' \
+    -c "$1" \
+    -c 'ROLLBACK' 2>&1)
+  if grep -qiE 'ERROR|no se pudo|violat' <<<"$salida"; then echo "rechazado"; else echo "permitido"; fi
 }
 
 token() {
@@ -198,6 +217,21 @@ afirmar "ninguna notificación quedó sin destinatario" \
 
 afirmar "ninguna notificación quedó sin kind" \
   "$(psql_val "SELECT COUNT(*) FROM CenterNotifications WHERE kind IS NULL;")" "0"
+
+# Invariante del modelo de SuperEventos: toda emergencia es LOCAL de una comuna. Si
+# alguna quedara sin dueña, el aislamiento de Emergencies dejaría de tener sentido.
+afirmar "ninguna emergencia quedó sin comuna dueña" \
+  "$(psql_val "SELECT COUNT(*) FROM Emergencies WHERE created_by_municipality_id IS NULL;")" "0"
+
+# RNF5: las cuatro comunas conviven en UNA base y UN esquema. Es la comprobación
+# observable de que incorporar una comuna no aprovisiona infraestructura.
+afirmar "todas las comunas comparten un solo esquema" \
+  "$(psql_val "SELECT COUNT(*) FROM information_schema.schemata
+                WHERE schema_name NOT IN ('pg_catalog','information_schema','pg_toast');")" \
+  "1"
+
+afirmar "y una sola base de datos" \
+  "$(psql_val "SELECT COUNT(*) FROM pg_database WHERE datname LIKE 'appcopio%';")" "1"
 echo
 
 # ----------------------------------------------------------
@@ -240,6 +274,29 @@ afirmar "Viña no puede editar un centro de Valparaíso" \
 
 afirmar "las personas de otra comuna no se filtran" \
   "$(psql_tenant 2 'SELECT COUNT(*) FROM Persons WHERE municipality_id = 1')" "0"
+
+# RF3 es un requisito distinto de RF12: el de arriba cubre a los RESIDENTES de un
+# centro, este cubre a los TRABAJADORES de la municipalidad. Cada comuna administra su
+# propio padrón de cuentas, y ninguna cuenta aparece en dos comunas.
+# Las dos respuestas se envuelven en un solo JSON para compararlas en un mismo proceso;
+# evita archivos temporales, que no son portables entre el bash de Windows y el de Linux.
+afirmar "ninguna cuenta de usuario se cruza entre comunas" \
+  "$("$PY_BIN" -c "
+import sys,json
+d = json.load(sys.stdin)
+a = {u['username'] for u in d['valpo']['users']}
+b = {u['username'] for u in d['vina']['users']}
+print(','.join(sorted(a & b)) if (a & b) else 'ninguno')" \
+    <<<"{\"valpo\":$(get "$T_VALPO" /users),\"vina\":$(get "$T_VINA" /users)}")" \
+  "ninguno"
+
+afirmar "y cada comuna administra su propio padrón" \
+  "$("$PY_BIN" -c "
+import sys,json
+d = json.load(sys.stdin)
+print('si' if len(d['valpo']['users']) > 0 and len(d['vina']['users']) > 0 else 'no')" \
+    <<<"{\"valpo\":$(get "$T_VALPO" /users),\"vina\":$(get "$T_VINA" /users)}")" \
+  "si"
 echo
 
 # ----------------------------------------------------------
@@ -256,6 +313,38 @@ print('varias' if isinstance(d,list) and len(d) >= 4 else 'insuficiente')")" \
 
 afirmar "un Trabajador sin apoyo no accede al tablero" "$(codigo "$T_TRAB" /cross-support/board/1)" "403"
 afirmar "un Trabajador CON apoyo sí accede al tablero" "$(codigo "$T_APOYO" /cross-support/board/1)" "200"
+echo
+
+# ----------------------------------------------------------
+echo "Catálogos compartidos y propios"
+# ----------------------------------------------------------
+# RF6: los catálogos base son compartidos (municipality_id NULL) y cada comuna puede
+# extenderlos con ítems propios. Lo sostienen dos índices únicos PARCIALES por tabla:
+# uno entre los registros globales y otro dentro de cada comuna.
+afirmar "existen los índices que separan el catálogo global del propio" \
+  "$(psql_val "SELECT COUNT(*) FROM pg_indexes
+                WHERE tablename IN ('categories','products')
+                  AND indexname IN ('categories_name_global_uq','categories_name_tenant_uq',
+                                    'products_name_global_uq','products_name_tenant_uq');")" \
+  "4"
+
+# Las dos inserciones van en la MISMA transacción, cambiando de tenant entre medio: así
+# la segunda se enfrenta de verdad a la primera. Si el índice fuera global, colisionarían.
+afirmar "dos comunas pueden crear una categoría con el mismo nombre" \
+  "$(psql_espera_ok "
+      SELECT set_config('app.current_tenant', '1', true);
+      INSERT INTO Categories (name, municipality_id) VALUES ('ZZ Prueba RF6', 1);
+      SELECT set_config('app.current_tenant', '2', true);
+      INSERT INTO Categories (name, municipality_id) VALUES ('ZZ Prueba RF6', 2);")" \
+  "permitido"
+
+# Pero el catálogo base sigue siendo único: nadie puede duplicar un nombre global.
+afirmar "pero ninguna puede duplicar una categoría del catálogo base" \
+  "$(psql_tenant_espera_error 1 \
+      "INSERT INTO Categories (name, municipality_id)
+         VALUES ((SELECT name FROM Categories WHERE municipality_id IS NULL ORDER BY name LIMIT 1), NULL)" \
+      'categories_name_global_uq')" \
+  "bloqueado"
 echo
 
 # ----------------------------------------------------------
@@ -290,25 +379,39 @@ afirmar "el índice único impide un segundo Administrador aunque se salte la ap
 echo
 
 # ----------------------------------------------------------
-echo "Emergencias y colaboración"
+echo "SuperEventos y colaboración"
 # ----------------------------------------------------------
-afirmar "el tablero de la E1 funciona en ambos sentidos" \
+afirmar "el tablero del SE1 funciona en ambos sentidos" \
   "$(echo "$(get "$T_VALPO" /cross-support/board/1 | contar)/$(get "$T_VINA" /cross-support/board/1 | contar)")" \
   "2/2"
 
 afirmar "una comuna que no participa recibe 403" "$(codigo "$T_CONCO" /cross-support/board/1)" "403"
 
-afirmar "el tablero no expone datos sensibles" \
+# Lista BLANCA, no negra: se afirma que no hay ninguna clave FUERA de las autorizadas,
+# en vez de que no estén siete nombres concretos. Es lo que el límite de confianza
+# intermunicipal realmente promete, y no envejece si mañana se agrega un campo nuevo.
+afirmar "el tablero expone exactamente los campos autorizados, y ninguno más" \
   "$(get "$T_VINA" /cross-support/board/1 | "$PY_BIN" -c "
 import sys,json
-prohibidos = {'persons','families','family_groups','inventory','quantity','rut','personas'}
+permitidos = {'center_id','name','latitude','longitude','capacity','fullness_percentage',
+              'operational_status','municipality_id','municipality_shortname',
+              'activation_id','emergency_id','emergency_name','prioridades'}
 d = json.load(sys.stdin)
-filtrados = sorted({k for c in d for k in c} & prohibidos)
-print(','.join(filtrados) if filtrados else 'limpio')")" \
-  "limpio"
+extra = sorted({k for c in d for k in c} - permitidos)
+print(','.join(extra) if extra else 'exacto')")" \
+  "exacto"
 
-afirmar "Quilpué está invitada a la E1, no participando" \
-  "$(psql_val "SELECT status FROM EmergencyParticipants WHERE emergency_id = 1 AND municipality_id = 3;")" \
+afirmar "y cada necesidad declarada, solo ítem y prioridad" \
+  "$(get "$T_VINA" /cross-support/board/1 | "$PY_BIN" -c "
+import sys,json
+permitidos = {'item_id','item_name','priority'}
+d = json.load(sys.stdin)
+extra = sorted({k for c in d for pr in c['prioridades'] for k in pr} - permitidos)
+print(','.join(extra) if extra else 'exacto')")" \
+  "exacto"
+
+afirmar "Quilpué está invitada al SE1, no participando" \
+  "$(psql_val "SELECT status FROM SuperEventParticipants WHERE super_event_id = 1 AND municipality_id = 3;")" \
   "invitada"
 
 afirmar "sus prioridades NO se comparten mientras no acepte" \
@@ -317,16 +420,16 @@ import sys,json
 print(sum(1 for c in json.load(sys.stdin) if c['municipality_shortname'] == 'QUILP'))")" \
   "0"
 
-# La E3 la declaró Viña y Quilpué no figura entre sus participantes, así que el INSERT
-# choca con emergency_participants_write (solo inscribe el superadmin o la comuna que
-# declaró la emergencia) y no con la clave primaria.
-afirmar "una comuna no invitada no puede autoinscribirse en una emergencia ajena" \
+# El SE2 lo originó Viña y Quilpué no figura entre sus participantes, así que el INSERT
+# choca con sep_write --que solo deja invitar al superadmin o a una comuna que ya esté
+# 'participando' en ese SuperEvento-- y no con la clave primaria.
+afirmar "una comuna no invitada no puede autoinscribirse en un SuperEvento ajeno" \
   "$(psql_tenant_espera_error 3 \
-      "INSERT INTO EmergencyParticipants (emergency_id, municipality_id, status) VALUES (3, 3, 'participando')" \
+      "INSERT INTO SuperEventParticipants (super_event_id, municipality_id, status) VALUES (2, 3, 'participando')" \
       'row-level security')" \
   "bloqueado"
 
-afirmar "Quilpué tiene activaciones sueltas para vincular en la E2" \
+afirmar "Quilpué tiene activaciones sueltas para vincular" \
   "$(get "$T_QUILP" /emergencies/activations/open | contar)" "2"
 
 afirmar "las cuatro ofertas están en los cuatro estados" \
@@ -337,6 +440,78 @@ afirmar "Valparaíso ve 2 ofertas recibidas" \
 
 afirmar "Valparaíso ve 2 ofertas enviadas" \
   "$(get "$T_VALPO" "/cross-support/offers?box=enviadas" | contar)" "2"
+
+# --- El cierre del SuperEvento revoca el acceso -------------------------------------
+# El SE3 está cerrado en el sembrado, pero sus emergencias y sus activaciones siguen
+# ABIERTAS: es justamente el caso que antes dejaba la colaboración viva indefinidamente.
+afirmar "el SuperEvento cerrado conserva sus emergencias abiertas" \
+  "$(psql_val "SELECT COUNT(*) FROM Emergencies WHERE super_event_id = 3 AND ended_at IS NULL;")" \
+  "2"
+
+afirmar "y aun así no comparte ningún centro" \
+  "$(codigo "$T_VINA" /cross-support/board/3)" "409"
+
+# La comprobación importante: la revocación vive en el MOTOR, no en una guarda de la
+# aplicación. Viña participa del SE3 junto a Concón y aun así no ve sus centros.
+afirmar "la revocación se aplica en el motor, no solo en la API" \
+  "$(psql_tenant 2 "SELECT COUNT(*) FROM super_event_shared_center_ids() WHERE center_id LIKE 'CONCO%'")" \
+  "0"
+
+afirmar "un SuperEvento cerrado no admite ofertas nuevas" \
+  "$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API/cross-support/offers" \
+      -H "Authorization: Bearer $T_VINA" -H "Content-Type: application/json" \
+      -d '{"super_event_id":3,"target_center_id":"CONCO-C001","message":"tarde"}')" \
+  "409"
+
+# --- Reglas del modelo de SuperEventos ----------------------------------------------
+# Aceptar no es un botón de "sí": la comuna debe aportar una emergencia, o el tablero
+# mostraría participantes que no exponen nada.
+afirmar "aceptar un SuperEvento sin aportar emergencia es rechazado" \
+  "$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API/super-events/1/respond" \
+      -H "Authorization: Bearer $T_QUILP" -H "Content-Type: application/json" \
+      -d '{"accept":true}')" \
+  "400"
+
+# Y la emergencia aportada tiene que ser suya: la 1 es de Valparaíso.
+afirmar "ni se puede aportar la emergencia de otra comuna" \
+  "$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API/super-events/1/respond" \
+      -H "Authorization: Bearer $T_QUILP" -H "Content-Type: application/json" \
+      -d '{"accept":true,"emergency_id":1}')" \
+  "404"
+
+# Una comuna aporta A LO SUMO una emergencia por SuperEvento: Viña ya aporta la 2 al SE1,
+# así que mover también la 4 debe chocar con el índice único parcial.
+afirmar "una comuna solo aporta una emergencia por SuperEvento" \
+  "$(psql_tenant_espera_error 2 \
+      "UPDATE Emergencies SET super_event_id = 1 WHERE emergency_id = 4" \
+      'emergencies_one_per_municipality_per_superevent_uq')" \
+  "bloqueado"
+
+# El Super Administrador no tiene comuna, y toda emergencia es local: no puede crearlas.
+afirmar "el Super Administrador no puede crear emergencias" \
+  "$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API/emergencies" \
+      -H "Authorization: Bearer $T_SUPER" -H "Content-Type: application/json" \
+      -d '{"name":"no deberia"}')" \
+  "403"
+
+# Invitar ya no es privilegio de quien originó el SuperEvento. Viña participa del SE1
+# sin haberlo creado (lo creó el Super Administrador) y aun así puede sumar comunas.
+# Va contra la base y con ROLLBACK para no dejar invitada a Concón.
+afirmar "una comuna participante no originaria puede invitar a otra" \
+  "$(psql_espera_ok "
+      SELECT set_config('app.current_tenant', '2', true);
+      INSERT INTO SuperEventParticipants (super_event_id, municipality_id, status, invited_by_municipality_id)
+      VALUES (1, 4, 'invitada', 2);")" \
+  "permitido"
+
+# --- Trazabilidad de lo compartido (RNF7) -------------------------------------------
+afirmar "toda participación resuelta registra cuándo se respondió" \
+  "$(psql_val "SELECT COUNT(*) FROM SuperEventParticipants
+                WHERE status <> 'invitada' AND responded_at IS NULL;")" "0"
+
+afirmar "toda oferta registra su comuna de origen y su fecha" \
+  "$(psql_val "SELECT COUNT(*) FROM CrossMunicipalSupportOffers
+                WHERE from_municipality_id IS NULL OR created_at IS NULL;")" "0"
 
 afirmar "una comuna ajena no puede cambiar el estado de una oferta" \
   "$(oferta=$(psql_val "SELECT offer_id FROM CrossMunicipalSupportOffers WHERE status = 'pending' LIMIT 1;")
@@ -353,13 +528,13 @@ afirmar "el admin de Valparaíso recibe la oferta y la invitación" \
   "$(get "$T_VALPO" /notifications/me | "$PY_BIN" -c "
 import sys,json
 print(','.join(sorted({n['kind'] for n in json.load(sys.stdin)})))")" \
-  "emergency_invitation,support_offer"
+  "super_event_invitation,support_offer"
 
 afirmar "el apoyo admin recibe lo mismo que el admin" \
   "$(get "$T_APOYO" /notifications/me | "$PY_BIN" -c "
 import sys,json
 print(','.join(sorted({n['kind'] for n in json.load(sys.stdin)})))")" \
-  "emergency_invitation,support_offer"
+  "super_event_invitation,support_offer"
 
 afirmar "el trabajador sin apoyo NO recibe avisos intercomunales" \
   "$(get "$T_TRAB" /notifications/me | contar)" "0"
@@ -396,14 +571,62 @@ import sys,json
 print(len({c['center_id'].split('-')[0] for c in json.load(sys.stdin)}))")" \
   "$comunas_activas"
 
-afirmar "el mapa público no expone datos sensibles" \
+# Misma lista blanca que en el tablero: lo que importa no es que falten siete nombres
+# concretos, sino que no aparezca nada fuera de lo que el canal anónimo debe mostrar.
+afirmar "el mapa público expone exactamente los campos autorizados, y ninguno más" \
   "$(get_publico /centers | "$PY_BIN" -c "
 import sys,json
-prohibidos = {'persons','families','family_groups','inventory','quantity','rut','personas'}
+permitidos = {'center_id','name','address','type','capacity','latitude','longitude',
+              'is_active','operational_status','fullness_percentage','fullnessPercentage',
+              'public_note'}
 d = json.load(sys.stdin)
-filtrados = sorted({k for c in d for k in c} & prohibidos)
-print(','.join(filtrados) if filtrados else 'limpio')")" \
-  "limpio"
+extra = sorted({k for c in d for k in c} - permitidos)
+print(','.join(extra) if extra else 'exacto')")" \
+  "exacto"
+echo
+
+# ----------------------------------------------------------
+echo "Alta de una municipalidad nueva"
+# ----------------------------------------------------------
+# RF1 solo se puede acreditar creando una comuna: es la única comprobación del script
+# que escribe de verdad. Va al final y borra lo que creó, de modo que la base queda
+# como estaba para cualquier ejecución posterior.
+RESP_MUNI=$(curl -s -X POST "$API/municipalities" \
+  -H "Authorization: Bearer $T_SUPER" -H "Content-Type: application/json" \
+  -d '{"name":"Comuna de Prueba","shortname":"ZZPRU",
+       "admin":{"username":"zz.prueba","password":"'"$PASS_CLAVE"'","email":"zz@prueba.cl",
+                "nombre":"Admin de Prueba","rut":"40.000.000-0"}}')
+
+ID_MUNI=$("$PY_BIN" -c "
+import sys,json
+try:
+    print(json.load(sys.stdin).get('municipality',{}).get('municipality_id',''))
+except Exception:
+    print('')" <<<"$RESP_MUNI")
+
+afirmar "el Super Administrador da de alta una comuna sobre la instancia en marcha" \
+  "$([[ -n "$ID_MUNI" ]] && echo creada || echo fallo)" "creada"
+
+if [[ -n "$ID_MUNI" ]]; then
+  # No hereda nada de nadie: parte vacía.
+  afirmar "la comuna nueva parte sin centros propios" \
+    "$(psql_val "SELECT COUNT(*) FROM Centers WHERE municipality_id = $ID_MUNI;")" "0"
+
+  # Y su correlativo parte en 1, no continúa el de las demás.
+  afirmar "su correlativo de centros parte de cero" \
+    "$(psql_val "SELECT center_seq_counter FROM Municipalities WHERE municipality_id = $ID_MUNI;")" "0"
+
+  # Su administrador queda atado a ella y a ninguna otra.
+  afirmar "su administrador queda atado solo a esa comuna" \
+    "$(psql_val "SELECT COUNT(*) FROM Users WHERE username = 'zz.prueba' AND municipality_id = $ID_MUNI AND role_id = 1;")" \
+    "1"
+
+  # Limpieza: la base queda exactamente como estaba antes de esta sección.
+  psql_val "DELETE FROM Users WHERE municipality_id = $ID_MUNI;" >/dev/null
+  psql_val "DELETE FROM Municipalities WHERE municipality_id = $ID_MUNI;" >/dev/null
+  afirmar "y la comprobación no deja rastro en la base" \
+    "$(psql_val "SELECT COUNT(*) FROM Municipalities WHERE municipality_id = $ID_MUNI;")" "0"
+fi
 echo
 
 # ----------------------------------------------------------

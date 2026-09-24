@@ -1,4 +1,4 @@
-// src/pages/Emergencies/SupportOffersPage.tsx
+// src/pages/SuperEvents/SupportOffersPage.tsx
 //
 // Bandeja de ofertas de apoyo. Las acciones dependen del lado:
 //   - enviadas  -> solo se pueden cancelar
@@ -77,7 +77,7 @@ export default function SupportOffersPage() {
         </Button>
       </Stack>
       <Typography color="text.secondary" sx={{ mb: 3 }}>
-        Ofrecimientos de recursos entre comunas participantes de una misma emergencia.
+        Ofrecimientos de recursos entre comunas participantes de un mismo SuperEvento.
       </Typography>
 
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
@@ -97,7 +97,7 @@ export default function SupportOffersPage() {
                 <TableCell>Centro</TableCell>
                 <TableCell>Ítem</TableCell>
                 <TableCell>Mensaje</TableCell>
-                <TableCell>Emergencia</TableCell>
+                <TableCell>SuperEvento</TableCell>
                 <TableCell>Estado</TableCell>
                 <TableCell align="right">Acciones</TableCell>
               </TableRow>
@@ -123,7 +123,7 @@ export default function SupportOffersPage() {
                   <TableCell>{o.target_center_name ?? o.target_center_id}</TableCell>
                   <TableCell>{o.item_name ?? "Apoyo general"}</TableCell>
                   <TableCell sx={{ maxWidth: 260 }}>{o.message ?? "—"}</TableCell>
-                  <TableCell>{o.emergency_name}</TableCell>
+                  <TableCell>{o.super_event_name}</TableCell>
                   <TableCell>
                     <Chip size="small" label={ETIQUETA_ESTADO[o.status]} color={COLOR_ESTADO[o.status]} />
                   </TableCell>

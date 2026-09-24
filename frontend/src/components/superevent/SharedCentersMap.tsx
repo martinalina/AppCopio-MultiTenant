@@ -1,4 +1,4 @@
-// src/components/emergency/SharedCentersMap.tsx
+// src/components/superevent/SharedCentersMap.tsx
 //
 // Vista de mapa del tablero intercomunal: responde "a quién alcanzo a llegar desde
 // donde estoy". Muestra los mismos centros que el listado —los de las otras comunas

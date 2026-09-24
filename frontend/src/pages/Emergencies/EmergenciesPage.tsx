@@ -1,41 +1,41 @@
 // src/pages/Emergencies/EmergenciesPage.tsx
 //
-// Una sola pantalla con dos caras según el rol:
-//  - Super Administrador: declara emergencias regionales e invita comunas.
-//  - Admin municipal: responde invitaciones y vincula sus activaciones abiertas.
+// Emergencias LOCALES de la comuna. Una emergencia agrupa las activaciones de sus
+// centros y es la unidad de organización interna: el nivel "emergencia menor".
+//
+// Acá NO se invita a otras comunas. Cuando el evento sobrepasa la capacidad
+// comunal, se usa «Colaborar con otra comuna», que envuelve esta emergencia en un
+// SUPEREVENTO sin mover un solo dato —ese es el caso que antes obligaba a
+// abandonar una emergencia o rehacerla a mano—. De ahí en adelante todo pasa por
+// /supereventos.
+//
+// El Super Administrador no entra a esta pantalla: no tiene comuna y por lo tanto
+// no puede tener emergencias.
 import * as React from "react";
 import {
-  Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions,
-  DialogContent, DialogContentText, DialogTitle, Divider, FormControlLabel, List,
-  ListItem, ListItemText, Paper, Stack, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, TextField, Typography,
+  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
+  DialogContentText, DialogTitle, Paper, Stack, Table, TableBody, TableCell,
+  TableContainer, TableHead, TableRow, TextField, Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
-import GroupAddIcon from "@mui/icons-material/GroupAdd";
-import LinkIcon from "@mui/icons-material/Link";
+import HubIcon from "@mui/icons-material/Hub";
+import PlaceIcon from "@mui/icons-material/Place";
+import { useNavigate } from "react-router-dom";
 
-import { useAuth } from "@/contexts/AuthContext";
-import { isSuperAdmin } from "@/utils/authz";
+import { paths } from "@/routes/paths";
 import {
-  listEmergencies, createEmergency, listParticipants, inviteMunicipalities,
-  respondInvitation, closeEmergency, listOpenActivations, linkActivations,
-  listMunicipalities,
-  type Emergency, type EmergencyParticipant, type OpenActivation, type Municipality,
+  listEmergencies, createEmergency, closeEmergency, type Emergency,
 } from "@/services/superadmin.service";
-
-const COLOR_ESTADO: Record<string, "success" | "warning" | "default"> = {
-  participando: "success",
-  invitada: "warning",
-  rechazada: "default",
-};
+import EmergencyActivationsDialog from "@/components/emergency/EmergencyActivationsDialog";
+import CreateSuperEventFromEmergencyDialog from "@/components/superevent/CreateSuperEventFromEmergencyDialog";
+import SuperEventLevelChip from "@/components/superevent/SuperEventLevelChip";
 
 function mensajeError(e: any, fallback: string) {
   return e?.response?.data?.message || e?.response?.data?.error || fallback;
 }
 
 export default function EmergenciesPage() {
-  const { user } = useAuth();
-  const esSuper = isSuperAdmin(user);
+  const navigate = useNavigate();
 
   const [rows, setRows] = React.useState<Emergency[]>([]);
   const [loading, setLoading] = React.useState(false);
@@ -43,24 +43,12 @@ export default function EmergenciesPage() {
   const [aviso, setAviso] = React.useState<string | null>(null);
 
   const [crearAbierto, setCrearAbierto] = React.useState(false);
-  const [nombre, setNombre] = React.useState("");
-  const [tipo, setTipo] = React.useState("");
-  const [guardando, setGuardando] = React.useState(false);
-
-  const [invitarPara, setInvitarPara] = React.useState<Emergency | null>(null);
-  const [comunas, setComunas] = React.useState<Municipality[]>([]);
-  const [participantes, setParticipantes] = React.useState<EmergencyParticipant[]>([]);
-  const [seleccion, setSeleccion] = React.useState<number[]>([]);
-
-  const [vincularPara, setVincularPara] = React.useState<Emergency | null>(null);
-  const [activaciones, setActivaciones] = React.useState<OpenActivation[]>([]);
-  const [activSel, setActivSel] = React.useState<number[]>([]);
-
+  const [centrosDe, setCentrosDe] = React.useState<Emergency | null>(null);
+  const [colaborarCon, setColaborarCon] = React.useState<Emergency | null>(null);
   const [cerrarPara, setCerrarPara] = React.useState<Emergency | null>(null);
 
   const cargar = React.useCallback(async () => {
     setLoading(true);
-    setError(null);
     try {
       setRows(await listEmergencies());
     } catch (e: any) {
@@ -72,187 +60,108 @@ export default function EmergenciesPage() {
 
   React.useEffect(() => { void cargar(); }, [cargar]);
 
-  const crear = async () => {
-    setGuardando(true);
-    try {
-      await createEmergency({ name: nombre.trim(), type: tipo.trim() || null });
-      setCrearAbierto(false);
-      setNombre(""); setTipo("");
-      await cargar();
-    } catch (e: any) {
-      setError(mensajeError(e, "No se pudo crear la emergencia."));
-    } finally {
-      setGuardando(false);
-    }
-  };
-
-  const abrirInvitar = async (em: Emergency) => {
-    setInvitarPara(em);
-    setSeleccion([]);
-    try {
-      const [ms, ps] = await Promise.all([listMunicipalities(), listParticipants(em.emergency_id)]);
-      setComunas(ms);
-      setParticipantes(ps);
-    } catch (e: any) {
-      setError(mensajeError(e, "No se pudieron cargar las comunas."));
-    }
-  };
-
-  const invitar = async () => {
-    if (!invitarPara) return;
-    setGuardando(true);
-    try {
-      await inviteMunicipalities(invitarPara.emergency_id, seleccion);
-      setAviso(`Se enviaron ${seleccion.length} invitación(es). Las comunas la verán en pantalla.`);
-      setInvitarPara(null);
-      await cargar();
-    } catch (e: any) {
-      setError(mensajeError(e, "No se pudo invitar."));
-    } finally {
-      setGuardando(false);
-    }
-  };
-
-  const responder = async (em: Emergency, aceptar: boolean) => {
-    try {
-      await respondInvitation(em.emergency_id, aceptar);
-      setAviso(aceptar
-        ? `Tu comuna ahora participa en "${em.name}". Ya puedes vincular activaciones.`
-        : `Rechazaste la invitación a "${em.name}".`);
-      await cargar();
-    } catch (e: any) {
-      setError(mensajeError(e, "No se pudo responder la invitación."));
-    }
-  };
-
-  const abrirVincular = async (em: Emergency) => {
-    setVincularPara(em);
-    setActivSel([]);
-    try {
-      const abiertas = await listOpenActivations();
-      setActivaciones(abiertas);
-      setActivSel(abiertas.filter((a) => a.emergency_id === em.emergency_id).map((a) => a.activation_id));
-    } catch (e: any) {
-      setError(mensajeError(e, "No se pudieron cargar las activaciones."));
-    }
-  };
-
-  const vincular = async () => {
-    if (!vincularPara) return;
-    setGuardando(true);
-    try {
-      const r = await linkActivations(vincularPara.emergency_id, { activation_ids: activSel });
-      setAviso(`${r.vinculadas} activación(es) vinculadas a "${vincularPara.name}".`);
-      setVincularPara(null);
-    } catch (e: any) {
-      setError(mensajeError(e, "No se pudieron vincular las activaciones."));
-    } finally {
-      setGuardando(false);
-    }
-  };
-
-  const cerrar = async () => {
-    if (!cerrarPara) return;
-    setGuardando(true);
-    try {
-      const r = await closeEmergency(cerrarPara.emergency_id);
-      setAviso(
-        r.activaciones_abiertas > 0
-          ? `Emergencia cerrada. Ojo: quedan ${r.activaciones_abiertas} activación(es) abiertas vinculadas, ` +
-            `así que las comunas participantes SIGUEN viendo esas prioridades hasta que se cierren.`
-          : "Emergencia cerrada. No quedan activaciones abiertas vinculadas."
-      );
-      setCerrarPara(null);
-      await cargar();
-    } catch (e: any) {
-      setError(mensajeError(e, "No se pudo cerrar la emergencia."));
-    } finally {
-      setGuardando(false);
-    }
-  };
-
-  const yaInvitadas = new Set(participantes.map((p) => p.municipality_id));
-  const invitables = comunas.filter((c) => !yaInvitadas.has(c.municipality_id));
-
   return (
     <Box sx={{ p: 3 }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-        <Typography variant="h4" fontWeight={700}>Emergencias</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCrearAbierto(true)}>
-          {esSuper ? "Declarar emergencia regional" : "Declarar emergencia"}
-        </Button>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={2}>
+        <Typography variant="h4" fontWeight={700}>Emergencias de mi comuna</Typography>
+        <Stack direction="row" spacing={1}>
+          <Button startIcon={<HubIcon />} onClick={() => navigate(paths.superEvents)}>
+            SuperEventos
+          </Button>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => setCrearAbierto(true)}>
+            Nueva emergencia
+          </Button>
+        </Stack>
       </Stack>
       <Typography color="text.secondary" sx={{ mb: 3 }}>
-        Participar en una emergencia comparte con las demás comunas las <strong>prioridades</strong> de
-        tus centros activos vinculados. Los datos de personas, familias e inventario nunca se comparten.
+        Cada emergencia agrupa los centros activos que participan en ella. Si el evento
+        sobrepasa la capacidad de la comuna, súmala a un SuperEvento para colaborar con
+        otras municipalidades.
       </Typography>
 
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
-      {aviso && <Alert severity="info" sx={{ mb: 2 }} onClose={() => setAviso(null)}>{aviso}</Alert>}
+      {aviso && <Alert severity="success" sx={{ mb: 2 }} onClose={() => setAviso(null)}>{aviso}</Alert>}
 
-      <Paper>
-        <TableContainer>
-          <Table>
+      {loading ? (
+        <CircularProgress />
+      ) : rows.length === 0 ? (
+        <Alert severity="info">
+          Tu comuna no tiene emergencias registradas. Crea una para organizar los centros
+          activos que responden a un mismo evento.
+        </Alert>
+      ) : (
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small">
             <TableHead>
               <TableRow>
                 <TableCell>Emergencia</TableCell>
-                <TableCell>Alcance</TableCell>
                 <TableCell>Estado</TableCell>
-                <TableCell>Mi comuna</TableCell>
-                <TableCell>Participando</TableCell>
+                <TableCell>SuperEvento</TableCell>
+                <TableCell align="center">Centros</TableCell>
                 <TableCell align="right">Acciones</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {loading && (
-                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 4 }}><CircularProgress size={28} /></TableCell></TableRow>
-              )}
-              {!loading && rows.length === 0 && (
-                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 4 }}>
-                  <Typography color="text.secondary">No hay emergencias visibles para ti.</Typography>
-                </TableCell></TableRow>
-              )}
-              {!loading && rows.map((em) => (
+              {rows.map((em) => (
                 <TableRow key={em.emergency_id} hover>
                   <TableCell>
-                    <Typography fontWeight={500}>{em.name}</Typography>
-                    {em.type && <Typography variant="caption" color="text.secondary">{em.type}</Typography>}
+                    {em.name}
+                    {em.type && (
+                      <Typography variant="caption" display="block" color="text.secondary">
+                        {em.type}
+                      </Typography>
+                    )}
                   </TableCell>
                   <TableCell>
-                    <Chip size="small"
-                          label={em.created_by_municipality_id == null ? "Regional" : "Comunal"} />
+                    <Chip
+                      label={em.ended_at ? "Cerrada" : "Vigente"}
+                      color={em.ended_at ? "default" : "success"}
+                      size="small" variant="outlined"
+                    />
                   </TableCell>
                   <TableCell>
-                    <Chip size="small" label={em.ended_at ? "Cerrada" : "Vigente"}
-                          color={em.ended_at ? "default" : "error"} />
+                    {em.super_event_id == null ? (
+                      <Typography variant="body2" color="text.secondary">Solo mi comuna</Typography>
+                    ) : (
+                      <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                        <Typography variant="body2">{em.super_event_name}</Typography>
+                        {em.super_event_level && <SuperEventLevelChip level={em.super_event_level} />}
+                        {em.super_event_ended_at && (
+                          <Chip label="cerrado" size="small" variant="outlined" />
+                        )}
+                      </Stack>
+                    )}
                   </TableCell>
-                  <TableCell>
-                    {em.mi_estado
-                      ? <Chip size="small" label={em.mi_estado} color={COLOR_ESTADO[em.mi_estado]} />
-                      : <Typography variant="caption" color="text.secondary">—</Typography>}
-                  </TableCell>
-                  <TableCell>{em.total_participando}</TableCell>
+                  <TableCell align="center">{em.centros_vinculados}</TableCell>
                   <TableCell align="right">
-                    <Stack direction="row" spacing={1} justifyContent="flex-end" flexWrap="wrap">
-                      {em.mi_estado === "invitada" && !em.ended_at && (
-                        <>
-                          <Button size="small" variant="contained" onClick={() => responder(em, true)}>Aceptar</Button>
-                          <Button size="small" color="inherit" onClick={() => responder(em, false)}>Rechazar</Button>
-                        </>
-                      )}
-                      {em.mi_estado === "participando" && !em.ended_at && (
-                        <Button size="small" startIcon={<LinkIcon />} onClick={() => abrirVincular(em)}>
-                          Vincular activaciones
-                        </Button>
-                      )}
-                      {esSuper && !em.ended_at && (
-                        <Button size="small" startIcon={<GroupAddIcon />} onClick={() => abrirInvitar(em)}>
-                          Invitar comunas
-                        </Button>
-                      )}
-                      {!em.ended_at && (
-                        <Button size="small" color="warning" onClick={() => setCerrarPara(em)}>Cerrar</Button>
-                      )}
+                    <Stack direction="row" spacing={1} justifyContent="flex-end">
+                      <Button
+                        size="small" startIcon={<PlaceIcon />}
+                        disabled={!!em.ended_at}
+                        onClick={() => setCentrosDe(em)}
+                      >
+                        Gestionar centros
+                      </Button>
+                      {/* Autocreado del SuperEvento: solo tiene sentido si la
+                          emergencia está vigente y todavía no pertenece a uno. */}
+                      <Button
+                        size="small" startIcon={<HubIcon />}
+                        disabled={!!em.ended_at || em.super_event_id != null}
+                        title={
+                          em.super_event_id != null
+                            ? "Esta emergencia ya forma parte de un SuperEvento"
+                            : "Crea un SuperEvento con esta emergencia e invita a otras comunas"
+                        }
+                        onClick={() => setColaborarCon(em)}
+                      >
+                        Colaborar con otra comuna
+                      </Button>
+                      <Button
+                        size="small" color="inherit"
+                        disabled={!!em.ended_at} onClick={() => setCerrarPara(em)}
+                      >
+                        Cerrar
+                      </Button>
                     </Stack>
                   </TableCell>
                 </TableRow>
@@ -260,143 +169,156 @@ export default function EmergenciesPage() {
             </TableBody>
           </Table>
         </TableContainer>
-      </Paper>
+      )}
 
-      {/* Declarar */}
-      <Dialog open={crearAbierto} onClose={() => setCrearAbierto(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{esSuper ? "Declarar emergencia regional" : "Declarar emergencia"}</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            <TextField label="Nombre" value={nombre} required fullWidth
-                       onChange={(e) => setNombre(e.target.value)} />
-            <TextField label="Tipo (incendio, sismo, meteorológico…)" value={tipo} fullWidth
-                       onChange={(e) => setTipo(e.target.value)} />
-            <Alert severity="info">
-              {esSuper
-                ? "Como Super Administrador, la emergencia nace regional y sin participantes: debes invitar a las comunas."
-                : "Tu comuna queda inscrita automáticamente como participante."}
-            </Alert>
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCrearAbierto(false)} disabled={guardando}>Cancelar</Button>
-          <Button variant="contained" onClick={crear} disabled={!nombre.trim() || guardando}>
-            {guardando ? "Creando…" : "Declarar"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <CrearEmergenciaDialog
+        abierto={crearAbierto}
+        onClose={() => setCrearAbierto(false)}
+        onHecho={(texto) => { setAviso(texto); void cargar(); }}
+      />
 
-      {/* Invitar comunas */}
-      <Dialog open={!!invitarPara} onClose={() => setInvitarPara(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>Invitar comunas a "{invitarPara?.name}"</DialogTitle>
-        <DialogContent>
-          <Typography variant="subtitle2" gutterBottom>Ya convocadas</Typography>
-          {participantes.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">Todavía ninguna.</Typography>
-          ) : (
-            <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mb: 2 }}>
-              {participantes.map((p) => (
-                <Chip key={p.municipality_id} size="small" label={`${p.shortname}: ${p.status}`}
-                      color={COLOR_ESTADO[p.status]} />
-              ))}
-            </Stack>
-          )}
-          <Divider sx={{ my: 2 }} />
-          <Typography variant="subtitle2" gutterBottom>Invitar a</Typography>
-          {invitables.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">No quedan comunas por invitar.</Typography>
-          ) : (
-            <List dense>
-              {invitables.map((c) => (
-                <ListItem key={c.municipality_id} disablePadding>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={seleccion.includes(c.municipality_id)}
-                        onChange={(e) =>
-                          setSeleccion((prev) =>
-                            e.target.checked
-                              ? [...prev, c.municipality_id]
-                              : prev.filter((x) => x !== c.municipality_id))}
-                      />
-                    }
-                    label={`${c.name} (${c.shortname})`}
-                  />
-                </ListItem>
-              ))}
-            </List>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setInvitarPara(null)} disabled={guardando}>Cancelar</Button>
-          <Button variant="contained" onClick={invitar} disabled={seleccion.length === 0 || guardando}>
-            {guardando ? "Invitando…" : `Invitar (${seleccion.length})`}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <EmergencyActivationsDialog
+        emergencyId={centrosDe?.emergency_id ?? null}
+        emergencyName={centrosDe?.name ?? ""}
+        onClose={() => setCentrosDe(null)}
+        onCambio={() => void cargar()}
+      />
 
-      {/* Vinculación masiva */}
-      <Dialog open={!!vincularPara} onClose={() => setVincularPara(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>Vincular activaciones a "{vincularPara?.name}"</DialogTitle>
-        <DialogContent>
-          <DialogContentText sx={{ mb: 2 }}>
-            Marca las activaciones abiertas de tu comuna que forman parte de esta emergencia.
-            Solo las marcadas comparten sus prioridades con las demás comunas participantes.
-          </DialogContentText>
-          {activaciones.length === 0 ? (
-            <Typography color="text.secondary">Tu comuna no tiene activaciones abiertas.</Typography>
-          ) : (
-            <List dense>
-              {activaciones.map((a) => (
-                <ListItem key={a.activation_id} disablePadding>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={activSel.includes(a.activation_id)}
-                        onChange={(e) =>
-                          setActivSel((prev) =>
-                            e.target.checked
-                              ? [...prev, a.activation_id]
-                              : prev.filter((x) => x !== a.activation_id))}
-                      />
-                    }
-                    label={
-                      <ListItemText
-                        primary={`${a.center_name} (${a.center_id})`}
-                        secondary={a.emergency_id ? `Ya vinculada a la emergencia ${a.emergency_id}` : "Sin emergencia"}
-                      />
-                    }
-                  />
-                </ListItem>
-              ))}
-            </List>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setVincularPara(null)} disabled={guardando}>Cancelar</Button>
-          <Button variant="contained" onClick={vincular} disabled={activSel.length === 0 || guardando}>
-            {guardando ? "Vinculando…" : `Vincular (${activSel.length})`}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <CreateSuperEventFromEmergencyDialog
+        emergencia={colaborarCon}
+        onClose={() => setColaborarCon(null)}
+        onHecho={(texto) => { setAviso(texto); void cargar(); }}
+      />
 
-      {/* Cerrar */}
-      <Dialog open={!!cerrarPara} onClose={() => setCerrarPara(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>Cerrar "{cerrarPara?.name}"</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Cerrar la emergencia la marca como terminada, pero <strong>no corta por sí solo</strong> el
-            acceso entre comunas: las prioridades se dejan de compartir cuando se cierran las
-            activaciones vinculadas o se las desvincula.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCerrarPara(null)} disabled={guardando}>Cancelar</Button>
-          <Button variant="contained" color="warning" onClick={cerrar} disabled={guardando}>
-            {guardando ? "Cerrando…" : "Cerrar emergencia"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <CerrarEmergenciaDialog
+        emergencia={cerrarPara}
+        onClose={() => setCerrarPara(null)}
+        onHecho={(texto) => { setAviso(texto); void cargar(); }}
+      />
     </Box>
+  );
+}
+
+/**
+ * Crear la emergencia dispara la PRIMERA tanda de invitaciones a centros: se avisa
+ * al encargado de cada activación abierta que no tenga emergencia. Las que ya están
+ * en otra quedan fuera a propósito, para no moverlas sin que nadie lo pida; se las
+ * puede traer después desde «Gestionar centros».
+ */
+function CrearEmergenciaDialog({
+  abierto, onClose, onHecho,
+}: { abierto: boolean; onClose: () => void; onHecho: (aviso: string) => void }) {
+  const [nombre, setNombre] = React.useState("");
+  const [tipo, setTipo] = React.useState("");
+  const [enviando, setEnviando] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (abierto) { setNombre(""); setTipo(""); setError(null); }
+  }, [abierto]);
+
+  const crear = async () => {
+    setEnviando(true);
+    setError(null);
+    try {
+      const r = await createEmergency({ name: nombre.trim(), type: tipo.trim() || null });
+      onHecho(
+        `Emergencia creada. Se convocó a ${r.centros_convocados} centro(s) sin emergencia ` +
+        `y se enviaron ${r.avisos_a_encargados} aviso(s) a sus encargados.`
+      );
+      onClose();
+    } catch (e: any) {
+      setError(mensajeError(e, "No se pudo crear la emergencia."));
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <Dialog open={abierto} onClose={enviando ? undefined : onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Nueva emergencia</DialogTitle>
+      <DialogContent>
+        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        <Stack spacing={2} sx={{ mt: 1 }}>
+          <TextField
+            label="Nombre" value={nombre} fullWidth size="small" autoFocus
+            onChange={(e) => setNombre(e.target.value)}
+            placeholder="Ej: Incendio forestal cerro Alegre"
+          />
+          <TextField
+            label="Tipo (opcional)" value={tipo} fullWidth size="small"
+            onChange={(e) => setTipo(e.target.value)}
+            placeholder="incendio, temporal, aluvión…"
+          />
+          <Alert severity="info">
+            Se avisará al encargado de cada centro activo que todavía no pertenezca a
+            ninguna emergencia, para que decida si se suma. Los centros que ya están en
+            otra emergencia no se tocan: puedes traerlos después desde «Gestionar centros».
+          </Alert>
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={enviando}>Cancelar</Button>
+        <Button variant="contained" onClick={crear} disabled={enviando || !nombre.trim()}>
+          {enviando ? "Creando…" : "Crear"}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+function CerrarEmergenciaDialog({
+  emergencia, onClose, onHecho,
+}: {
+  emergencia: Emergency | null;
+  onClose: () => void;
+  onHecho: (aviso: string) => void;
+}) {
+  const [enviando, setEnviando] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const confirmar = async () => {
+    if (!emergencia) return;
+    setEnviando(true);
+    setError(null);
+    try {
+      const r = await closeEmergency(emergencia.emergency_id);
+      onHecho(
+        r.activaciones_abiertas > 0
+          ? `Emergencia cerrada. Quedan ${r.activaciones_abiertas} activación(es) abiertas vinculadas: ` +
+            `ciérralas o muévelas a otra emergencia cuando corresponda.`
+          : "Emergencia cerrada."
+      );
+      onClose();
+    } catch (e: any) {
+      setError(mensajeError(e, "No se pudo cerrar la emergencia."));
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!emergencia} onClose={enviando ? undefined : onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Cerrar «{emergencia?.name}»</DialogTitle>
+      <DialogContent>
+        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        <DialogContentText>
+          Cerrar la emergencia es un cambio de estado de tu comuna: los centros siguen
+          activos si su activación lo está.
+          {emergencia?.super_event_id != null && (
+            <>
+              {" "}Esta emergencia pertenece a un SuperEvento; la colaboración intercomunal
+              termina cuando se cierra <strong>el SuperEvento</strong>, no esta emergencia.
+            </>
+          )}
+        </DialogContentText>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={enviando}>Cancelar</Button>
+        <Button color="warning" variant="contained" onClick={confirmar} disabled={enviando}>
+          {enviando ? "Cerrando…" : "Cerrar emergencia"}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }

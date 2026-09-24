@@ -1,7 +1,10 @@
 // src/services/crossSupport.service.ts
 //
 // Tablero intercomunal y ofertas de apoyo. Solo disponible para comunas que
-// están participando en la emergencia.
+// están participando en un SUPEREVENTO vigente.
+//
+// El SuperEvento agrupa las emergencias locales de varias comunas, así que cada
+// centro del tablero viene etiquetado con la emergencia que lo aporta.
 import { api } from "@/lib/api";
 
 export type EstadoOferta = "pending" | "accepted" | "rejected" | "cancelled";
@@ -13,7 +16,7 @@ export type PrioridadCentro = {
 };
 
 /**
- * Centro de otra comuna visible durante la emergencia.
+ * Centro de otra comuna visible durante el SuperEvento.
  *
  * El backend limita los campos en la propia base de datos: nunca llegan datos de
  * personas, familias, catastro ni cantidades de inventario.
@@ -34,6 +37,9 @@ export type CentroCompartido = {
   municipality_id: number;
   municipality_shortname: string;
   activation_id: number;
+  /** Emergencia local de esa comuna que aporta el centro al SuperEvento. */
+  emergency_id: number;
+  emergency_name: string;
   prioridades: PrioridadCentro[];
 };
 
@@ -63,8 +69,9 @@ export function compararPorUrgencia(a: CentroCompartido, b: CentroCompartido): n
 
 export type Oferta = {
   offer_id: number;
-  emergency_id: number;
-  emergency_name: string;
+  super_event_id: number;
+  super_event_name: string;
+  super_event_level: "mayor" | "desastre" | "catastrofe";
   from_municipality_id: number;
   from_municipality_name: string;
   target_center_id: string;
@@ -79,8 +86,8 @@ export type Oferta = {
   created_by_name: string | null;
 };
 
-export async function getBoard(emergencyId: number): Promise<CentroCompartido[]> {
-  const { data } = await api.get<CentroCompartido[]>(`/cross-support/board/${emergencyId}`);
+export async function getBoard(superEventId: number): Promise<CentroCompartido[]> {
+  const { data } = await api.get<CentroCompartido[]>(`/cross-support/board/${superEventId}`);
   return data;
 }
 
@@ -90,7 +97,7 @@ export async function listOffers(box: "enviadas" | "recibidas" | "todas" = "toda
 }
 
 export async function createOffer(payload: {
-  emergency_id: number;
+  super_event_id: number;
   target_center_id: string;
   item_id?: number | null;
   message?: string | null;

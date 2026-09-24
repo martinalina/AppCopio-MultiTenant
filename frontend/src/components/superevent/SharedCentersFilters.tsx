@@ -1,4 +1,4 @@
-// src/components/emergency/SharedCentersFilters.tsx
+// src/components/superevent/SharedCentersFilters.tsx
 //
 // Filtros del tablero intercomunal. Se aplican en el cliente sobre lo que ya devolvió
 // la API: son pocos centros y así el listado y el mapa muestran exactamente el mismo
@@ -12,6 +12,8 @@ export type Orden = "urgencia" | "cercania";
 
 export type FiltrosTablero = {
   comuna: number | "";
+  /** El SuperEvento agrupa varias emergencias: se puede mirar solo una. */
+  emergencia: number | "";
   itemId: number | "";
   prioridadMinima: "todas" | "medio" | "alto";
   orden: Orden;
@@ -19,6 +21,7 @@ export type FiltrosTablero = {
 
 export const FILTROS_INICIALES: FiltrosTablero = {
   comuna: "",
+  emergencia: "",
   itemId: "",
   prioridadMinima: "todas",
   orden: "urgencia",
@@ -42,6 +45,12 @@ export default function SharedCentersFilters({
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [centros]);
 
+  const emergencias = React.useMemo(() => {
+    const m = new Map<number, string>();
+    centros.forEach((c) => m.set(c.emergency_id, c.emergency_name));
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [centros]);
+
   const items = React.useMemo(() => {
     const m = new Map<number, string>();
     centros.forEach((c) => c.prioridades.forEach((p) => m.set(p.item_id, p.item_name)));
@@ -54,7 +63,7 @@ export default function SharedCentersFilters({
     <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
       <FormControl size="small" sx={{ minWidth: 180 }}>
         <InputLabel id="f-comuna">Comuna</InputLabel>
-        <Select
+        <Select<number | "">
           labelId="f-comuna" label="Comuna" value={valor.comuna}
           onChange={(e) => set({ comuna: e.target.value === "" ? "" : Number(e.target.value) })}
         >
@@ -65,9 +74,22 @@ export default function SharedCentersFilters({
         </Select>
       </FormControl>
 
+      <FormControl size="small" sx={{ minWidth: 220 }} disabled={emergencias.length < 2}>
+        <InputLabel id="f-emergencia">Emergencia</InputLabel>
+        <Select<number | "">
+          labelId="f-emergencia" label="Emergencia" value={valor.emergencia}
+          onChange={(e) => set({ emergencia: e.target.value === "" ? "" : Number(e.target.value) })}
+        >
+          <MenuItem value="">Todas</MenuItem>
+          {emergencias.map(([id, nombre]) => (
+            <MenuItem key={id} value={id}>{nombre}</MenuItem>
+          ))}
+        </Select>
+      </FormControl>
+
       <FormControl size="small" sx={{ minWidth: 200 }} disabled={items.length === 0}>
         <InputLabel id="f-item">Ítem necesitado</InputLabel>
-        <Select
+        <Select<number | "">
           labelId="f-item" label="Ítem necesitado" value={valor.itemId}
           onChange={(e) => set({ itemId: e.target.value === "" ? "" : Number(e.target.value) })}
         >
