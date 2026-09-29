@@ -13,7 +13,10 @@
 // Se valida acá y además en la política cmso_update de la base de datos.
 import { Router, RequestHandler } from 'express';
 import pool from '../config/db';
-import { requireUser, requireTenant, ADMIN_ROLE_ID } from '../auth/requireUser';
+import {
+  requireUser, requireTenant, crearGuardaAdmin,
+  ADMIN_ROLE_ID, MUNICIPAL_WORKER_ROLE_ID,
+} from '../auth/requireUser';
 import {
   getBoard, listOffers, createOffer, getOfferForUpdate, setOfferStatus,
   type EstadoOferta,
@@ -22,27 +25,40 @@ import {
 const router = Router();
 
 /**
- * La colaboración intercomunal la decide el administrador de la comuna (o un
- * trabajador con es_apoyo_admin), los mismos que el guard de rutas del frontend deja
- * entrar a /emergencias.
+ * Cambiar el estado de una oferta compromete a la comuna frente a otra, así que
+ * queda en manos del administrador (o de un trabajador con es_apoyo_admin).
  *
- * Hacía falta acá y no solo en el frontend: sin esto, cualquier trabajador municipal
- * podía pedir el tablero directamente a la API y ver los centros y necesidades de las
- * otras comunas.
+ * Incluye aprobar un borrador: enviarlo es el acto institucional, no crearlo.
  */
-const soloAdminOApoyo: RequestHandler = (req, res, next) => {
+const soloAdminOApoyo = crearGuardaAdmin({
+  message: 'Solo el administrador de la comuna gestiona la colaboración intercomunal.',
+});
+
+/**
+ * Consultar el tablero y redactar ofertas sí alcanza al personal en terreno: el
+ * encargado de una activación es quien sabe qué puede ofrecer su centro.
+ *
+ * Deja fuera al Contacto Ciudadano (rol 3), que no es personal municipal, porque el
+ * tablero expone centros y necesidades de las OTRAS comunas. Sin esta guarda,
+ * cualquiera con sesión podría pedirlo directamente a la API.
+ */
+const soloPersonalMunicipal: RequestHandler = (req, res, next) => {
   const u = req.user;
   if (!u) {
     res.status(401).json({ error: 'Unauthorized' });
     return;
   }
-  if (u.role_id === ADMIN_ROLE_ID || u.es_apoyo_admin === true) {
+  if (
+    u.role_id === ADMIN_ROLE_ID ||
+    u.role_id === MUNICIPAL_WORKER_ROLE_ID ||
+    u.es_apoyo_admin === true
+  ) {
     next();
     return;
   }
   res.status(403).json({
-    error: 'SOLO_ADMIN',
-    message: 'Solo el administrador de la comuna gestiona la colaboración intercomunal.',
+    error: 'SOLO_PERSONAL_MUNICIPAL',
+    message: 'Solo el personal municipal accede a la colaboración intercomunal.',
   });
 };
 
@@ -161,6 +177,10 @@ const create: RequestHandler = async (req, res) => {
       return;
     }
 
+    // Admin y apoyo_admin envían directo; trabajadores crean borrador para revisión.
+    const isAdmin = user.role_id === ADMIN_ROLE_ID || user.es_apoyo_admin === true;
+    const status: 'draft' | 'pending' = isAdmin ? 'pending' : 'draft';
+
     const oferta = await createOffer(pool, {
       super_event_id: superEventId,
       target_center_id,
@@ -168,9 +188,12 @@ const create: RequestHandler = async (req, res) => {
       message: message ?? null,
       created_by: user.user_id,
       from_municipality_id: fromMunicipalityId,
+      status,
     });
 
-    // Avisa a la comuna que recibe.
+    // La notificación solo se envía cuando la oferta es visible para el destino.
+    // Los borradores (status = 'draft') no se notifican: el destino no los ve
+    // hasta que el admin los apruebe (draft → pending).
     //
     // No se puede insertar la notificación directamente: la política
     // centernotif_tenant solo deja escribir avisos para la PROPIA comuna, y acá
@@ -178,7 +201,9 @@ const create: RequestHandler = async (req, res) => {
     // DEFINER estrecha —solo recibe el id de la oferta y verifica que quien llama
     // sea su comuna de origen— que compone el mensaje del lado de la base de datos.
     // Tampoco pasa por sendNotification, que dispararía correo.
-    await pool.query(`SELECT notify_support_offer($1)`, [oferta.offer_id]);
+    if (status === 'pending') {
+      await pool.query(`SELECT notify_support_offer($1)`, [oferta.offer_id]);
+    }
 
     res.status(201).json(oferta);
   } catch (err: any) {
@@ -196,8 +221,8 @@ const updateStatus: RequestHandler = async (req, res) => {
       res.status(400).json({ error: 'offer_id inválido.' });
       return;
     }
-    if (!['accepted', 'rejected', 'cancelled'].includes(status)) {
-      res.status(400).json({ error: "status debe ser 'accepted', 'rejected' o 'cancelled'." });
+    if (!['pending', 'accepted', 'rejected', 'cancelled'].includes(status)) {
+      res.status(400).json({ error: "status debe ser 'pending', 'accepted', 'rejected' o 'cancelled'." });
       return;
     }
 
@@ -206,6 +231,48 @@ const updateStatus: RequestHandler = async (req, res) => {
       res.status(404).json({ error: 'La oferta no existe o no es visible para tu comuna.' });
       return;
     }
+
+    const soyOrigen = oferta.from_municipality_id === municipalityId;
+    const soyDestino = oferta.target_municipality_id === municipalityId;
+
+    if (status === 'pending') {
+      // Aprobación de borrador: el admin de la comuna que la creó la envía.
+      if (oferta.status !== 'draft') {
+        res.status(409).json({ error: 'OFERTA_NO_BORRADOR', message: 'Solo se pueden aprobar borradores.' });
+        return;
+      }
+      if (!soyOrigen) {
+        res.status(403).json({ error: 'SOLO_ORIGEN', message: 'Solo la comuna que creó la oferta puede aprobarla.' });
+        return;
+      }
+      // Aprobar ES enviar la oferta, así que exige lo mismo que crearla: comuna
+      // participando y SuperEvento vigente. Sin esto, un borrador redactado antes
+      // del cierre se podría enviar después, saltándose la revocación.
+      if (!(await comunaParticipa(oferta.super_event_id, res))) return;
+
+      const resultado = await setOfferStatus(pool, offerId, 'pending');
+      await pool.query(`SELECT notify_support_offer($1)`, [offerId]);
+      res.json(resultado);
+      return;
+    }
+
+    if (status === 'cancelled') {
+      if (!['draft', 'pending'].includes(oferta.status)) {
+        res.status(409).json({
+          error: 'OFERTA_YA_RESUELTA',
+          message: `Esta oferta ya está en estado "${oferta.status}".`,
+        });
+        return;
+      }
+      if (!soyOrigen) {
+        res.status(403).json({ error: 'SOLO_ORIGEN', message: 'Solo la comuna que hizo la oferta puede cancelarla.' });
+        return;
+      }
+      res.json(await setOfferStatus(pool, offerId, 'cancelled'));
+      return;
+    }
+
+    // accepted / rejected: solo la comuna destino, solo desde pending.
     if (oferta.status !== 'pending') {
       res.status(409).json({
         error: 'OFERTA_YA_RESUELTA',
@@ -213,18 +280,7 @@ const updateStatus: RequestHandler = async (req, res) => {
       });
       return;
     }
-
-    const soyOrigen = oferta.from_municipality_id === municipalityId;
-    const soyDestino = oferta.target_municipality_id === municipalityId;
-
-    if (status === 'cancelled' && !soyOrigen) {
-      res.status(403).json({
-        error: 'SOLO_ORIGEN',
-        message: 'Solo la comuna que hizo la oferta puede cancelarla.',
-      });
-      return;
-    }
-    if ((status === 'accepted' || status === 'rejected') && !soyDestino) {
+    if (!soyDestino) {
       res.status(403).json({
         error: 'SOLO_DESTINO',
         message: 'Solo la comuna que recibe la oferta puede aceptarla o rechazarla.',
@@ -238,9 +294,9 @@ const updateStatus: RequestHandler = async (req, res) => {
   }
 };
 
-router.get('/board/:superEventId', soloAdminOApoyo, board);
-router.get('/offers', soloAdminOApoyo, list);
-router.post('/offers', soloAdminOApoyo, create);
+router.get('/board/:superEventId', soloPersonalMunicipal, board);
+router.get('/offers', soloPersonalMunicipal, list);
+router.post('/offers', soloPersonalMunicipal, create);
 router.patch('/offers/:offerId', soloAdminOApoyo, updateStatus);
 
 export default router;

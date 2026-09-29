@@ -8,7 +8,7 @@
 // que ya limita los campos en la propia base de datos.
 import { Db } from '../types/db';
 
-export type EstadoOferta = 'pending' | 'accepted' | 'rejected' | 'cancelled';
+export type EstadoOferta = 'draft' | 'pending' | 'accepted' | 'rejected' | 'cancelled';
 
 export type CentroCompartido = {
   center_id: string;
@@ -96,12 +96,13 @@ export async function createOffer(
     message?: string | null;
     created_by: number;
     from_municipality_id: number;
+    status: 'draft' | 'pending';
   }
 ) {
   const { rows } = await db.query(
     `INSERT INTO CrossMunicipalSupportOffers
-       (super_event_id, from_municipality_id, target_center_id, item_id, message, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6)
+       (super_event_id, from_municipality_id, target_center_id, item_id, message, created_by, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING offer_id, super_event_id, from_municipality_id, target_center_id,
                item_id, message, status, created_at`,
     [
@@ -111,6 +112,7 @@ export async function createOffer(
       input.item_id ?? null,
       input.message ?? null,
       input.created_by,
+      input.status,
     ]
   );
   return rows[0];

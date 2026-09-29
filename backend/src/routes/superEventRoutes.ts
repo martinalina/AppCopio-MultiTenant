@@ -18,14 +18,14 @@
 import { Router, RequestHandler } from 'express';
 import pool from '../config/db';
 import {
-  requireUser, requireTenant, requireSuperAdmin,
+  requireUser, requireTenant, requireSuperAdmin, crearGuardaAdmin,
   SUPERADMIN_ROLE_ID, ADMIN_ROLE_ID,
 } from '../auth/requireUser';
 import { createEmergency } from '../services/emergencyService';
 import {
   listSuperEvents, listParticipants, estadoDe, getSuperEventVigente,
   createSuperEvent, createFromEmergency, groupEmergencies, listEmergenciasHuerfanas,
-  inviteMunicipalities, aportarEmergenciaExistente,
+  inviteMunicipalities, aportarEmergenciaExistente, liberarEmergenciasPrevias, retirarComuna,
   marcarInvitacionLeida, esNivelValido,
 } from '../services/superEventService';
 
@@ -56,21 +56,10 @@ function manejarError(res: any, err: any, contexto: string) {
  * Hace falta acá y no solo en el guard del frontend: sin esto, cualquier
  * trabajador municipal podría invitar comunas llamando directo a la API.
  */
-const soloAdminOApoyo: RequestHandler = (req, res, next) => {
-  const u = req.user;
-  if (!u) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return;
-  }
-  if (u.role_id === ADMIN_ROLE_ID || u.role_id === SUPERADMIN_ROLE_ID || u.es_apoyo_admin === true) {
-    next();
-    return;
-  }
-  res.status(403).json({
-    error: 'SOLO_ADMIN',
-    message: 'Solo el administrador de la comuna gestiona la colaboración intercomunal.',
-  });
-};
+const soloAdminOApoyo = crearGuardaAdmin({
+  incluirSuperAdmin: true,
+  message: 'Solo el administrador de la comuna gestiona la colaboración intercomunal.',
+});
 
 function idValido(res: any, valor: string, campo: string): number | null {
   const n = parseInt(valor, 10);
@@ -181,7 +170,7 @@ const fromEmergency: RequestHandler = async (req, res) => {
 /** Agrupa emergencias que ya existen y no tienen SuperEvento. Solo el Super Administrador. */
 const group: RequestHandler = async (req, res) => {
   try {
-    requireSuperAdmin(req);
+    const user = requireSuperAdmin(req);
     const superEventId = idValido(res, req.params.superEventId, 'super_event_id');
     if (superEventId == null) return;
     const { emergency_ids } = req.body ?? {};
@@ -192,9 +181,18 @@ const group: RequestHandler = async (req, res) => {
     }
     await getSuperEventVigente(pool, superEventId);
 
-    res.json(await groupEmergencies(
-      pool, superEventId, emergency_ids.map(Number).filter(Number.isFinite)
-    ));
+    const r = await groupEmergencies(
+      pool, superEventId, emergency_ids.map(Number).filter(Number.isFinite), user.user_id
+    );
+
+    // Agrupar ahora invita, así que hay que avisarle a cada comuna que le toca
+    // decidir. Solo a las recién invitadas: las que ya tenían fila conservan su
+    // estado y no se les vuelve a preguntar.
+    for (const municipalityId of r.invitadas) {
+      await pool.query(`SELECT notify_super_event_invitation($1, $2)`, [superEventId, municipalityId]);
+    }
+
+    res.json(r);
   } catch (err: any) {
     manejarError(res, err, 'groupEmergencies');
   }
@@ -315,6 +313,15 @@ const respond: RequestHandler = async (req, res) => {
       res.status(404).json({ error: 'Tu comuna no tiene una invitación a ese SuperEvento.' });
       return;
     }
+    // Solo una invitación pendiente se responde. Una comuna 'retirada' no puede
+    // volver sola: la reactiva el Super Administrador agrupando de nuevo.
+    if (estado !== 'invitada') {
+      res.status(409).json({
+        error: 'INVITACION_NO_PENDIENTE',
+        message: 'Tu comuna no tiene una invitación pendiente a ese SuperEvento.',
+      });
+      return;
+    }
 
     if (!accept) {
       const { rows } = await pool.query(
@@ -323,6 +330,18 @@ const respond: RequestHandler = async (req, res) => {
           RETURNING super_event_id, municipality_id, status, responded_at`,
         [superEventId, municipalityId]
       );
+
+      // Si la comuna llegó acá por agrupación, su emergencia ya estaba vinculada al
+      // SuperEvento. Rechazar tiene que soltarla: si no, queda atrapada en un evento
+      // que la comuna rechazó —sin compartirse, pero también sin volver a ser
+      // huérfana para agruparse o aportarse en otro lado. Es no-op para una comuna
+      // invitada por la vía normal, que nunca aportó emergencia.
+      await pool.query(
+        `UPDATE Emergencies SET super_event_id = NULL
+          WHERE super_event_id = $1 AND created_by_municipality_id = $2`,
+        [superEventId, municipalityId]
+      );
+
       await marcarInvitacionLeida(pool, superEventId, municipalityId);
       res.json(rows[0]);
       return;
@@ -345,8 +364,12 @@ const respond: RequestHandler = async (req, res) => {
     let emergencia: any;
     let avisos = 0;
     if (traeExistente) {
+      // Si el SuperAdmin agrupó otra emergencia de esta comuna, se suelta antes de
+      // aportar la elegida (la agrupada misma se conserva: el aporte es idempotente).
+      await liberarEmergenciasPrevias(pool, superEventId, municipalityId, Number(emergency_id));
       emergencia = await aportarEmergenciaExistente(pool, superEventId, Number(emergency_id));
     } else {
+      await liberarEmergenciasPrevias(pool, superEventId, municipalityId, null);
       // La emergencia nace acá, así que sí hay que preguntarle a cada centro.
       const creada = await createEmergency(pool, {
         name: new_emergency.name,
@@ -378,6 +401,20 @@ const respond: RequestHandler = async (req, res) => {
     });
   } catch (err: any) {
     manejarError(res, err, 'respondSuperEvent');
+  }
+};
+
+/** La comuna participante se retira sin cerrar el SuperEvento. */
+const withdraw: RequestHandler = async (req, res) => {
+  try {
+    requireUser(req);
+    const municipalityId = requireTenant(req);
+    const superEventId = idValido(res, req.params.superEventId, 'super_event_id');
+    if (superEventId == null) return;
+
+    res.json(await retirarComuna(pool, superEventId, municipalityId));
+  } catch (err: any) {
+    manejarError(res, err, 'withdrawSuperEvent');
   }
 };
 
@@ -432,6 +469,7 @@ router.get('/:superEventId/participants', participants);
 router.post('/:superEventId/invite', soloAdminOApoyo, invite);
 router.post('/:superEventId/group-emergencies', soloAdminOApoyo, group);
 router.post('/:superEventId/respond', soloAdminOApoyo, respond);
+router.post('/:superEventId/withdraw', soloAdminOApoyo, withdraw);
 router.patch('/:superEventId/close', soloAdminOApoyo, close);
 
 export default router;

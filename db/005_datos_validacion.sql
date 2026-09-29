@@ -20,7 +20,7 @@
 --      corta el acceso de verdad.
 --   3. Una emergencia LOCAL sin SuperEvento, que es el caso más común.
 --   4. Invitaciones a centros en todos sus estados, para la pantalla de gestión.
---   5. Ofertas de colaboración en los cuatro estados posibles.
+--   5. Ofertas de colaboración en los cinco estados posibles.
 --   6. Notificaciones dirigidas a quien puede actuar sobre ellas.
 --
 -- Corre como superusuario, así que no pasa por RLS. Ninguna notificación usa un
@@ -202,7 +202,7 @@ INSERT INTO CenterItemPriority (center_id, item_id, priority, updated_by) VALUES
 
 
 -- ----------------------------------------------------------
--- 8. Ofertas de colaboración en los cuatro estados
+-- 8. Ofertas de colaboración en los cinco estados
 --
 --    Todas en el SuperEvento 1, el único con centros compartidos en ambos
 --    sentidos, para que las dos bandejas (enviadas / recibidas) tengan contenido
@@ -220,7 +220,15 @@ INSERT INTO CrossMunicipalSupportOffers
  (SELECT user_id FROM Users WHERE username = 'admin'), 'rejected'),
 -- Cancelada por quien la ofreció.
 (1, 2, 'VALPO-C002', 2, 'Teníamos frazadas disponibles, pero ya se comprometieron.',
- (SELECT user_id FROM Users WHERE username = 'admin.vina'), 'cancelled');
+ (SELECT user_id FROM Users WHERE username = 'admin.vina'), 'cancelled'),
+-- Borrador: creado por un trabajador de Valparaíso sin apoyo admin, pendiente de
+-- aprobación del admin antes de ser visible para el destino.
+--
+-- Apunta a VINA-C001 y no a VINA-C003 a propósito: la activación de C003 cuelga de
+-- la emergencia 6, que pertenece al SE3 CERRADO, así que no es un centro compartido
+-- del SE1 y por la UI no se habría podido ofrecer nada ahí.
+(1, 1, 'VINA-C001', NULL, 'Podemos apoyar con personal voluntario este fin de semana.',
+ (SELECT user_id FROM Users WHERE username = 'tito'), 'draft');
 
 
 -- ----------------------------------------------------------

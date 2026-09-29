@@ -13,9 +13,11 @@ import { useNavigate } from "react-router-dom";
 
 import { useAuth } from "@/contexts/AuthContext";
 import { paths } from "@/routes/paths";
+import { isAdminOrSupport } from "@/utils/authz";
 import { listOffers, setOfferStatus, type Oferta, type EstadoOferta } from "@/services/crossSupport.service";
 
-const COLOR_ESTADO: Record<EstadoOferta, "warning" | "success" | "error" | "default"> = {
+const COLOR_ESTADO: Record<EstadoOferta, "info" | "warning" | "success" | "error" | "default"> = {
+  draft: "info",
   pending: "warning",
   accepted: "success",
   rejected: "error",
@@ -23,6 +25,7 @@ const COLOR_ESTADO: Record<EstadoOferta, "warning" | "success" | "error" | "defa
 };
 
 const ETIQUETA_ESTADO: Record<EstadoOferta, string> = {
+  draft: "Borrador",
   pending: "Pendiente",
   accepted: "Aceptada",
   rejected: "Rechazada",
@@ -67,6 +70,9 @@ export default function SupportOffersPage() {
   };
 
   const esRecibida = tab === "recibidas";
+  // Debe coincidir con soloAdminOApoyo del backend: quien no cumple ve el estado,
+  // no botones que la API va a rechazar con 403.
+  const puedeResolver = isAdminOrSupport(user);
 
   return (
     <Box sx={{ p: 3 }}>
@@ -128,9 +134,20 @@ export default function SupportOffersPage() {
                     <Chip size="small" label={ETIQUETA_ESTADO[o.status]} color={COLOR_ESTADO[o.status]} />
                   </TableCell>
                   <TableCell align="right">
-                    {o.status !== "pending" ? (
-                      <Typography variant="caption" color="text.secondary">—</Typography>
-                    ) : esRecibida ? (
+                    {!puedeResolver ? (
+                      <Typography variant="caption" color="text.secondary">
+                        {o.status === "draft" ? "Pendiente de aprobación" : "—"}
+                      </Typography>
+                    ) : o.status === "draft" && !esRecibida ? (
+                      <Stack direction="row" spacing={1} justifyContent="flex-end">
+                        <Button size="small" variant="contained" onClick={() => responder(o, "pending")}>
+                          Enviar
+                        </Button>
+                        <Button size="small" color="inherit" onClick={() => responder(o, "cancelled")}>
+                          Cancelar
+                        </Button>
+                      </Stack>
+                    ) : o.status === "pending" && esRecibida ? (
                       <Stack direction="row" spacing={1} justifyContent="flex-end">
                         <Button size="small" variant="contained" onClick={() => responder(o, "accepted")}>
                           Aceptar
@@ -139,10 +156,12 @@ export default function SupportOffersPage() {
                           Rechazar
                         </Button>
                       </Stack>
-                    ) : (
+                    ) : o.status === "pending" && !esRecibida ? (
                       <Button size="small" color="warning" onClick={() => responder(o, "cancelled")}>
                         Cancelar
                       </Button>
+                    ) : (
+                      <Typography variant="caption" color="text.secondary">—</Typography>
                     )}
                   </TableCell>
                 </TableRow>
@@ -153,6 +172,7 @@ export default function SupportOffersPage() {
       </Paper>
 
       <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 2 }}>
+        Los borradores son visibles solo para tu municipalidad; el administrador debe enviarlos para que lleguen al destino.
         Solo la comuna que ofrece puede cancelar; solo la que recibe puede aceptar o rechazar.
         {user?.municipality_name && ` Estás operando como ${user.municipality_name}.`}
       </Typography>

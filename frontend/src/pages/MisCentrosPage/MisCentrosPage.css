@@ -1,109 +1,334 @@
 /* src/pages/MisCentrosPage/MisCentrosPage.css */
 
+/* El layout sigue el de CenterManagementPage (filas anchas con borde de estado a la
+   izquierda y botonera a la derecha) para que ambas vistas de centros se lean igual.
+   Las clases van prefijadas con .mc- porque los CSS no están scopeados y nombres
+   genéricos como .center-info ya se filtran entre páginas. */
+
 .mis-centros-container {
-  padding: 2rem;
-  max-width: 900px;
-  margin: 2rem auto;
-  font-family: sans-serif;
+  padding: 24px 20px 40px;
 }
 
-.mis-centros-list {
-  list-style-type: none;
-  padding: 0;
-  margin-top: 2rem;
-  display: grid;
-  gap: 1.5rem;
-}
-
-.centro-card {
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  padding: 1.5rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  background-color: #fff;
-  transition: box-shadow 0.2s ease-in-out;
-}
-
-.centro-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.card-header {
+.mc-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: 4px;
 }
 
-.card-header h3 {
+.mc-subtitle {
+  margin: 0 0 20px;
+  color: #6b7280;
+  font-size: 0.95rem;
+}
+
+.mc-results-info {
+  padding: 10px 15px;
+  background-color: #eef2f7;
+  border-left: 4px solid #337ab7;
+  border-radius: 4px;
+  color: #495057;
+  font-size: 0.9rem;
+}
+
+.mc-results-info p {
   margin: 0;
-  font-size: 1.25rem;
 }
 
-.status-pill {
-  padding: 6px 12px;
-  border-radius: 15px;
-  font-size: 0.9em;
-  font-weight: bold;
+.mis-centros-list {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0 0;
+  display: grid;
+  gap: 14px;
+}
+
+.mc-item {
+  background-color: #fff;
+  border: 1px solid #e3e6ea;
+  border-left: 5px solid #ccc; /* Gris por defecto */
+  border-radius: 10px;
+  padding: 18px 20px;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.mc-item:hover {
+  box-shadow: 0 4px 12px rgba(16, 24, 40, 0.1);
+}
+
+.mc-item.mc-active {
+  border-left-color: #28a745;
+}
+
+.mc-item.mc-inactive {
+  border-left-color: #b9bec4;
+  background-color: #fcfcfd;
+}
+
+/* Fila principal: datos a la izquierda, botonera a la derecha. */
+.mc-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+/* min-width fuerza a la botonera a bajar de línea en vez de estrujar el nombre. */
+.mc-main > .mc-info {
+  flex: 1 1 340px;
+  min-width: 260px;
+}
+
+.mc-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.mc-title-row h3 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #1f2937;
+  line-height: 1.3;
+}
+
+.mc-status {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
   text-transform: uppercase;
-  border: 2px solid;
+  border: 1px solid;
+  line-height: 1.4;
 }
 
-.status-pill.active {
+.mc-status.mc-active {
   background-color: var(--color-operational-open-bg);
   color: var(--color-operational-open);
   border-color: var(--color-operational-open);
 }
 
-.status-pill.inactive {
+.mc-status.mc-inactive {
   background-color: var(--color-operational-full-bg);
   color: var(--color-operational-full);
   border-color: var(--color-operational-full);
 }
 
-.card-body p {
-  margin: 0.5rem 0;
-  color: #555;
+/* Adelanta que el centro está expuesto a otras comunas; el detalle vive en el pie. */
+.mc-chip-compartido {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  background-color: #e7f3fe;
+  color: #0b5f9e;
+  border: 1px solid #a8d4f5;
 }
 
-.card-actions {
-  margin-top: 1.5rem;
+.mc-meta {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #6b7280;
   display: flex;
-  gap: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.action-button {
+.mc-dot {
+  color: #c4c9d0;
+}
+
+.mc-emergencia {
+  margin: 6px 0 0;
+  font-size: 0.875rem;
+  color: #337ab7;
+  font-weight: 600;
+}
+
+.mc-emergencia .mc-label {
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.mc-emergencia-vacia {
+  color: #9aa1a9;
+  font-weight: 500;
+  font-style: italic;
+}
+
+.mc-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.mc-actions .mc-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 38px;
+  padding: 0 16px;
+  margin: 0;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1;
+  white-space: nowrap;
   text-decoration: none;
-  padding: 0.6rem 1.2rem;
-  border-radius: 5px;
-  text-align: center;
-  font-weight: bold;
-  transition: background-color 0.2s ease;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
-.manage-btn {
-  background-color: #007bff;
-  color: white;
+/* Principal */
+.mc-actions .mc-btn-primary {
+  background-color: #17a2b8;
+  color: #fff;
 }
-.manage-btn:hover {
-  background-color: #0056b3;
+.mc-actions .mc-btn-primary:hover {
+  background-color: #138496;
 }
 
-.details-btn {
-  background-color: #f0f0f0;
-  color: #333;
-  border: 1px solid #ccc;
+/* Secundaria */
+.mc-actions .mc-btn-secondary {
+  background-color: #fff;
+  color: #3f51b5;
+  border-color: #c5cae9;
 }
-.details-btn:hover {
-  background-color: #e0e0e0;
+.mc-actions .mc-btn-secondary:hover {
+  background-color: #eef0fb;
 }
 
 .no-centers-message {
   text-align: center;
-  padding: 2rem;
+  padding: 40px;
+  color: #6b7280;
+  font-style: italic;
   background-color: #f8f9fa;
+  border-radius: 10px;
+  border: 1px dashed #dee2e6;
+  margin-top: 20px;
+}
+
+/* ---------------------------------------------------------------------------
+   Aviso de que el centro está expuesto a otras comunas. El encargado aceptó
+   sumarse a la emergencia local, no necesariamente sabe que además se está
+   compartiendo, así que el aviso no se puede omitir; pero el detalle completo
+   deformaba la fila. Va plegado como pie de la tarjeta: la línea visible dice
+   QUÉ pasa, y al abrirlo se ve QUÉ se comparte y qué no.
+   --------------------------------------------------------------------------- */
+.mc-compartido {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed #e3e6ea;
+  font-size: 0.85rem;
+  color: #0b4a75;
+}
+
+.mc-compartido > summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.mc-compartido > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Punto azul + flecha, dibujados en CSS para no depender de una librería de iconos. */
+.mc-compartido > summary::before {
+  content: "";
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: #2196f3;
+}
+
+.mc-compartido > summary::after {
+  content: "▾";
+  margin-left: auto;
+  color: #6b7280;
+  font-size: 0.8rem;
+  transition: transform 0.2s ease;
+}
+
+.mc-compartido[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+.mc-compartido-texto {
+  flex: 1 1 auto;
+}
+
+.mc-compartido > summary:hover {
+  color: #08395a;
+}
+
+.mc-compartido-detalle {
+  margin-top: 10px;
+  padding: 12px 14px;
+  background-color: #f2f8fd;
+  border: 1px solid #d6e9f8;
   border-radius: 8px;
-  margin-top: 2rem;
+  line-height: 1.5;
+}
+
+.mc-compartido-detalle p {
+  margin: 0;
+  color: #0b4a75;
+  font-size: 0.85rem;
+}
+
+.mc-compartido-nunca {
+  margin-top: 6px !important;
+  font-weight: 700;
+}
+
+@media (max-width: 900px) {
+  .mc-main {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* En columna, flex-basis pasa a controlar el ALTO: sin este reset el bloque de
+     datos reservaría 340px de alto y dejaría un hueco sobre los botones. */
+  .mc-main > .mc-info {
+    flex: 0 0 auto;
+    min-width: 0;
+  }
+
+  .mc-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 768px) {
+  .mis-centros-container {
+    padding: 16px 15px 32px;
+  }
+}
+
+@media (max-width: 480px) {
+  .mc-actions .mc-btn {
+    flex: 1 1 100%;
+  }
 }

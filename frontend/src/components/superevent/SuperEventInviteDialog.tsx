@@ -37,6 +37,7 @@ export default function SuperEventInviteDialog() {
   const [error, setError] = React.useState<string | null>(null);
   const [aceptando, setAceptando] = React.useState(false);
   const [emergencias, setEmergencias] = React.useState<Emergency[]>([]);
+  const [emergenciaVinculada, setEmergenciaVinculada] = React.useState<Emergency | null>(null);
 
   const esAdmin = isAdminOrSupport(user);
 
@@ -63,12 +64,26 @@ export default function SuperEventInviteDialog() {
   const esDeSuperEvento = pendiente?.kind === "super_event_invitation";
 
   // Las emergencias que la comuna puede aportar: abiertas y sin SuperEvento.
+  //
+  // Aparte va la que YA está vinculada a este SuperEvento, si lo hubo: el Super
+  // Administrador pudo agrupar a la comuna, y entonces la emergencia que corresponde
+  // aportar tiene super_event_id puesto y el filtro de arriba la descartaría, dejando
+  // al administrador sin nada que seleccionar.
   React.useEffect(() => {
     if (!esDeSuperEvento) return;
     listEmergencies()
-      .then((r) => setEmergencias(r.filter((e) => !e.ended_at && e.super_event_id == null)))
-      .catch(() => setEmergencias([]));
-  }, [esDeSuperEvento, pendiente?.notification_id]);
+      .then((r) => {
+        const abiertas = r.filter((e) => !e.ended_at);
+        setEmergencias(abiertas.filter((e) => e.super_event_id == null));
+        setEmergenciaVinculada(
+          abiertas.find((e) => e.super_event_id === pendiente?.super_event_id) ?? null
+        );
+      })
+      .catch(() => {
+        setEmergencias([]);
+        setEmergenciaVinculada(null);
+      });
+  }, [esDeSuperEvento, pendiente?.notification_id, pendiente?.super_event_id]);
 
   if (!pendiente) return null;
 
@@ -132,6 +147,7 @@ export default function SuperEventInviteDialog() {
         abierto
         superEventName={pendiente.super_event_name ?? "el SuperEvento"}
         emergenciasDisponibles={emergencias}
+        emergenciaVinculada={emergenciaVinculada}
         enviando={enviando}
         error={error}
         onClose={() => { setAceptando(false); setError(null); }}

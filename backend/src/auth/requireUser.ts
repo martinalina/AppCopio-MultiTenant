@@ -1,5 +1,5 @@
 // src/auth/requireUser.ts
-import type { Request } from "express";
+import type { Request, RequestHandler } from "express";
 import type { JwtUser } from "./tokens";
 
 export const SUPERADMIN_ROLE_ID = 4;
@@ -59,4 +59,45 @@ export function requireCenterManager(req: Request): JwtUser {
     throw e;
   }
   return u;
+}
+
+/**
+ * Guarda de rol para rutas de gestión: solo el administrador de la comuna, o un
+ * trabajador con `es_apoyo_admin`, pasa.
+ *
+ * Hace falta en el servidor y no solo en el `ProtectedRoute` del frontend: sin
+ * esto, cualquier usuario con sesión válida de la comuna puede ejecutar la acción
+ * llamando directo a la API. RLS aísla la comuna, no el rol dentro de ella.
+ *
+ * Se construye por router para no cambiar la forma de las líneas de ruta:
+ *   const soloAdminOApoyo = crearGuardaAdmin({ message: "..." });
+ *
+ * - `incluirSuperAdmin`: lo habilita donde el Super Administrador también opera
+ *   (crear y agrupar SuperEventos). Queda fuera por defecto, porque no tiene comuna
+ *   y no opera datos locales.
+ */
+export function crearGuardaAdmin(opciones?: {
+  incluirSuperAdmin?: boolean;
+  message?: string;
+}): RequestHandler {
+  const incluirSuperAdmin = opciones?.incluirSuperAdmin === true;
+  const message =
+    opciones?.message ?? "Solo el administrador de la comuna realiza esta operación.";
+
+  return (req, res, next) => {
+    const u = req.user;
+    if (!u) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+    if (
+      u.role_id === ADMIN_ROLE_ID ||
+      u.es_apoyo_admin === true ||
+      (incluirSuperAdmin && u.role_id === SUPERADMIN_ROLE_ID)
+    ) {
+      next();
+      return;
+    }
+    res.status(403).json({ error: "SOLO_ADMIN", message });
+  };
 }

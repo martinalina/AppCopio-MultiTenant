@@ -12,7 +12,7 @@
 import { Db } from '../types/db';
 
 export type NivelEvento = 'mayor' | 'desastre' | 'catastrofe';
-export type EstadoParticipacion = 'invitada' | 'participando' | 'rechazada';
+export type EstadoParticipacion = 'invitada' | 'participando' | 'rechazada' | 'retirada';
 
 export const NIVELES: NivelEvento[] = ['mayor', 'desastre', 'catastrofe'];
 
@@ -227,14 +227,23 @@ export async function createFromEmergency(
  * Agrupa emergencias YA EXISTENTES bajo un SuperEvento. Solo el Super
  * Administrador: es el que tiene visibilidad sobre todas las comunas.
  *
- * Las comunas dueñas quedan 'participando' sin pasar por invitación, porque el
- * acto de agrupar ES la decisión de que colaboran. Las que ya tenían fila
- * conservan su estado.
+ * Agrupar VINCULA la emergencia, pero no da el consentimiento por la comuna: cada
+ * dueña queda 'invitada' y decide si acepta. Antes entraban directo a
+ * 'participando' con un responded_at fingido, lo que inscribía comunas en una
+ * colaboración sin que nadie con autoridad para ello lo hubiera decidido.
+ *
+ * Que la emergencia quede vinculada mientras la comuna sigue 'invitada' no filtra
+ * nada: super_event_shared_centers() exige que la comuna dueña esté 'participando'
+ * para exponer sus centros.
+ *
+ * Las que ya tenían fila conservan su estado —incluida una 'rechazada'—, que es lo
+ * que este docblock prometía y el ON CONFLICT DO UPDATE anterior incumplía.
  */
 export async function groupEmergencies(
   db: Db,
   superEventId: number,
-  emergencyIds: number[]
+  emergencyIds: number[],
+  invitedBy: number
 ) {
   const { rows: candidatas } = await db.query(
     `SELECT emergency_id, name, created_by_municipality_id, super_event_id
@@ -277,17 +286,23 @@ export async function groupEmergencies(
     [superEventId, emergencyIds]
   );
 
+  // ON CONFLICT es seguro acá —a diferencia de inviteMunicipalities— porque agrupar
+  // exige superadmin, y sep_read lo exime: la fila recién creada le es visible.
+  const invitadas: number[] = [];
   for (const e of agrupadas) {
-    await db.query(
-      `INSERT INTO SuperEventParticipants (super_event_id, municipality_id, status, responded_at)
-       VALUES ($1, $2, 'participando', now())
-       ON CONFLICT (super_event_id, municipality_id)
-       DO UPDATE SET status = 'participando', responded_at = now()`,
-      [superEventId, e.created_by_municipality_id]
+    const { rows } = await db.query(
+      `INSERT INTO SuperEventParticipants (super_event_id, municipality_id, status, invited_by)
+       VALUES ($1, $2, 'invitada', $3)
+       ON CONFLICT (super_event_id, municipality_id) DO UPDATE
+         SET status = 'invitada', responded_at = NULL, invited_by = EXCLUDED.invited_by
+         WHERE SuperEventParticipants.status = 'retirada'
+       RETURNING municipality_id`,
+      [superEventId, e.created_by_municipality_id, invitedBy]
     );
+    if (rows.length > 0) invitadas.push(rows[0].municipality_id);
   }
 
-  return { super_event_id: superEventId, agrupadas };
+  return { super_event_id: superEventId, agrupadas, invitadas };
 }
 
 /** Emergencias abiertas y sin SuperEvento. Para agrupar y para aceptar invitaciones. */
@@ -366,6 +381,55 @@ export async function inviteMunicipalities(
   return { invitadas, yaEstaban };
 }
 
+/**
+ * Una comuna 'participando' sale del SuperEvento sin cerrarlo. La usan el botón
+ * Retirarme y el cierre de la emergencia aportada.
+ *
+ * Pasar a 'retirada' basta para cortar el acceso en ambos sentidos: los centros
+ * compartidos y las políticas intermunicipales exigen 'participando'. La emergencia
+ * se suelta (vuelve a huérfana) para liberar el cupo de una por comuna. Las
+ * activaciones y los centros no se tocan.
+ */
+export async function retirarComuna(db: Db, superEventId: number, municipalityId: number) {
+  const { rows } = await db.query(
+    `UPDATE SuperEventParticipants SET status = 'retirada', responded_at = now()
+      WHERE super_event_id = $1 AND municipality_id = $2 AND status = 'participando'
+      RETURNING super_event_id, municipality_id, status, responded_at`,
+    [superEventId, municipalityId]
+  );
+  if (!rows[0]) {
+    throw fallo(409, 'NO_PARTICIPAS', 'Tu comuna no está participando en este SuperEvento.');
+  }
+  await db.query(
+    `UPDATE Emergencies SET super_event_id = NULL
+      WHERE super_event_id = $1 AND created_by_municipality_id = $2`,
+    [superEventId, municipalityId]
+  );
+  return rows[0];
+}
+
+/**
+ * Suelta las emergencias de la comuna que ya estaban vinculadas a este SuperEvento,
+ * salvo `conservarId`. Sirve para cuando el Super Administrador agrupó una emergencia
+ * y la comuna, al aceptar, elige aportar OTRA (existente o nueva): sin soltar la
+ * agrupada, el índice único de una emergencia por comuna por SuperEvento haría fallar
+ * el aporte. La soltada vuelve a quedar huérfana. Va en la misma transacción del
+ * request, así que si el aporte falla, la agrupada no queda suelta.
+ */
+export async function liberarEmergenciasPrevias(
+  db: Db,
+  superEventId: number,
+  municipalityId: number,
+  conservarId: number | null
+) {
+  await db.query(
+    `UPDATE Emergencies SET super_event_id = NULL
+      WHERE super_event_id = $1 AND created_by_municipality_id = $2
+        AND ($3::int IS NULL OR emergency_id <> $3::int)`,
+    [superEventId, municipalityId, conservarId]
+  );
+}
+
 /** Vincula una emergencia local ya existente al SuperEvento. */
 export async function aportarEmergenciaExistente(
   db: Db,
@@ -408,7 +472,7 @@ export async function aportarEmergenciaExistente(
       throw fallo(
         409,
         'YA_APORTASTE_EMERGENCIA',
-        'Tu comuna ya aporta otra emergencia a este SuperEvento. Solo se admite una.'
+        'Tu comuna ya tiene otra emergencia vinculada a este SuperEvento. Solo se admite una; reintenta.'
       );
     }
     throw err;

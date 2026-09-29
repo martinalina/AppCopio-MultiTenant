@@ -24,6 +24,7 @@ import { paths } from "@/routes/paths";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   listSuperEvents, listSuperEventParticipants, inviteToSuperEvent, closeSuperEvent,
+  withdrawFromSuperEvent,
   type SuperEvent, type SuperEventParticipant,
 } from "@/services/superEvents.service";
 import { listMunicipalities, type Municipality } from "@/services/superadmin.service";
@@ -45,6 +46,7 @@ export default function SuperEventsPage() {
 
   const [invitarA, setInvitarA] = React.useState<SuperEvent | null>(null);
   const [cerrar, setCerrar] = React.useState<SuperEvent | null>(null);
+  const [retirar, setRetirar] = React.useState<SuperEvent | null>(null);
 
   const cargar = React.useCallback(async () => {
     setCargando(true);
@@ -143,6 +145,14 @@ export default function SuperEventsPage() {
                       Invitar
                     </Button>
                     <Button
+                      size="small" color="warning"
+                      disabled={!!se.ended_at || se.mi_estado !== "participando"}
+                      title="Dejas de compartir tus centros; el SuperEvento sigue para las demás comunas"
+                      onClick={() => setRetirar(se)}
+                    >
+                      Retirarme
+                    </Button>
+                    <Button
                       size="small" color="inherit"
                       disabled={!!se.ended_at || !puedeCerrar(se)}
                       title={
@@ -165,6 +175,11 @@ export default function SuperEventsPage() {
       <InviteDialog
         superEvento={invitarA}
         onClose={() => setInvitarA(null)}
+        onHecho={(texto) => { setAviso(texto); void cargar(); }}
+      />
+      <WithdrawDialog
+        superEvento={retirar}
+        onClose={() => setRetirar(null)}
         onHecho={(texto) => { setAviso(texto); void cargar(); }}
       />
       <CloseDialog
@@ -273,6 +288,57 @@ export function InviteDialog({
         <Button onClick={onClose} disabled={enviando}>Cancelar</Button>
         <Button variant="contained" onClick={enviar} disabled={enviando || seleccion.length === 0}>
           {enviando ? "Enviando…" : "Invitar"}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+/** Retirarse deja de compartir MIS centros; el SuperEvento sigue vigente para las demás. */
+function WithdrawDialog({
+  superEvento, onClose, onHecho,
+}: {
+  superEvento: SuperEvent | null;
+  onClose: () => void;
+  onHecho: (aviso: string) => void;
+}) {
+  const [enviando, setEnviando] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => { setError(null); }, [superEvento?.super_event_id]);
+
+  const confirmar = async () => {
+    if (!superEvento) return;
+    setEnviando(true);
+    setError(null);
+    try {
+      await withdrawFromSuperEvent(superEvento.super_event_id);
+      onHecho(`Te retiraste de «${superEvento.name}». Tus centros dejaron de compartirse.`);
+      onClose();
+    } catch (e: any) {
+      setError(mensajeError(e, "No se pudo completar el retiro."));
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!superEvento} onClose={enviando ? undefined : onClose} maxWidth="sm" fullWidth>
+      <DialogTitle>Retirarme de «{superEvento?.name}»</DialogTitle>
+      <DialogContent>
+        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+        <Alert severity="warning">
+          Tus centros dejarán de compartirse con las demás comunas, y tú dejarás de ver
+          el tablero y las ofertas. Tu emergencia
+          {superEvento?.mi_emergency_name ? ` «${superEvento.mi_emergency_name}»` : ""} sale
+          del SuperEvento pero sigue abierta en tu comuna. Para volver, el Super
+          Administrador tendría que agrupar tu emergencia de nuevo.
+        </Alert>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} disabled={enviando}>Cancelar</Button>
+        <Button color="warning" variant="contained" onClick={confirmar} disabled={enviando}>
+          {enviando ? "Retirando…" : "Retirarme"}
         </Button>
       </DialogActions>
     </Dialog>

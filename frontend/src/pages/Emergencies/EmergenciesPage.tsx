@@ -283,11 +283,14 @@ function CerrarEmergenciaDialog({
     setError(null);
     try {
       const r = await closeEmergency(emergencia.emergency_id);
+      const retiro = r.retirada_de_superevento
+        ? " Tu comuna se retiró del SuperEvento y dejó de compartir sus centros."
+        : "";
       onHecho(
-        r.activaciones_abiertas > 0
+        (r.activaciones_abiertas > 0
           ? `Emergencia cerrada. Quedan ${r.activaciones_abiertas} activación(es) abiertas vinculadas: ` +
             `ciérralas o muévelas a otra emergencia cuando corresponda.`
-          : "Emergencia cerrada."
+          : "Emergencia cerrada.") + retiro
       );
       onClose();
     } catch (e: any) {
@@ -307,8 +310,9 @@ function CerrarEmergenciaDialog({
           activos si su activación lo está.
           {emergencia?.super_event_id != null && (
             <>
-              {" "}Esta emergencia pertenece a un SuperEvento; la colaboración intercomunal
-              termina cuando se cierra <strong>el SuperEvento</strong>, no esta emergencia.
+              {" "}Esta emergencia pertenece a un SuperEvento: si tu comuna participa en él,
+              cerrarla <strong>la retira del SuperEvento</strong> y tus centros dejan de
+              compartirse. El SuperEvento sigue vigente para las demás comunas.
             </>
           )}
         </DialogContentText>

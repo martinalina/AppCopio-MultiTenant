@@ -7,7 +7,7 @@
 // centro del tablero viene etiquetado con la emergencia que lo aporta.
 import { api } from "@/lib/api";
 
-export type EstadoOferta = "pending" | "accepted" | "rejected" | "cancelled";
+export type EstadoOferta = "draft" | "pending" | "accepted" | "rejected" | "cancelled";
 
 export type PrioridadCentro = {
   item_id: number;

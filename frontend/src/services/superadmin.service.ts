@@ -202,11 +202,15 @@ export async function respondActivation(emergencyId: number, activationId: numbe
   return data;
 }
 
-/** Cierra la emergencia local. No corta la colaboración: eso lo hace cerrar el SuperEvento. */
+/**
+ * Cierra la emergencia local. Si la comuna aportaba esta emergencia a un SuperEvento,
+ * queda retirada de él (`retirada_de_superevento`). Cerrar el SuperEvento es aparte.
+ */
 export async function closeEmergency(emergencyId: number): Promise<{
   emergency_id: number;
   name: string;
   ended_at: string;
+  retirada_de_superevento: boolean;
   activaciones_abiertas: number;
 }> {
   const { data } = await api.patch(`/emergencies/${emergencyId}/close`);

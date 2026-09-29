@@ -63,8 +63,12 @@ CREATE TABLE SuperEventParticipants (
     -- Igual que en EmergencyParticipants: tener fila alcanza para VER el
     -- SuperEvento (y así saber a qué te invitan), pero la colaboración real
     -- exige 'participando'.
+    -- 'retirada': una comuna que estaba 'participando' salió por su cuenta (botón
+    -- Retirarme) o al cerrar la emergencia que aportaba. Distinta de 'rechazada'
+    -- (nunca llegó a participar). Solo el Super Administrador puede reactivarla,
+    -- volviendo a agrupar su emergencia.
     status          TEXT NOT NULL DEFAULT 'invitada'
-        CHECK (status IN ('invitada', 'participando', 'rechazada')),
+        CHECK (status IN ('invitada', 'participando', 'rechazada', 'retirada')),
     invited_by      INT REFERENCES Users(user_id) ON DELETE SET NULL,
     -- Nuevo respecto de EmergencyParticipants: ahora invita cualquier comuna
     -- participante, así que hay que poder decir quién invitó a quién.
@@ -182,10 +186,17 @@ ALTER TABLE SuperEvents FORCE ROW LEVEL SECURITY;
 ALTER TABLE SuperEventParticipants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE SuperEventParticipants FORCE ROW LEVEL SECURITY;
 
+-- La comuna creadora entra por created_by_municipality_id y no solo por su fila de
+-- participación, y eso NO es redundante: al autocrear un SuperEvento desde su propia
+-- emergencia, el INSERT ... RETURNING obliga a Postgres a evaluar también esta
+-- política, y en ese instante la fila de SuperEventParticipants todavía no existe
+-- —se inserta después—. Sin esta cláusula el camino municipal muere con 42501, que
+-- la API traduce a un 403 indistinguible de "te falta ser Super Administrador".
 CREATE POLICY super_events_read ON SuperEvents
   FOR SELECT
   USING (
     is_superadmin()
+    OR created_by_municipality_id = current_tenant()
     OR super_event_id IN (
         SELECT p.super_event_id FROM SuperEventParticipants p
         WHERE p.municipality_id = current_tenant()
@@ -235,6 +246,22 @@ CREATE POLICY sep_write ON SuperEventParticipants
         SELECT p.super_event_id FROM SuperEventParticipants p
         WHERE p.municipality_id = current_tenant()
           AND p.status = 'participando'
+    )
+    -- Bootstrap del camino municipal: exigir estar YA 'participando' para insertar
+    -- la propia primera fila es un círculo imposible —nadie puede ser el primer
+    -- participante salvo el superadmin—, y es lo que impedía a una comuna escalar su
+    -- emergencia. Se abre solo para el SuperEvento que ella misma originó, no con un
+    -- municipality_id = current_tenant() suelto: eso permitiría autoinscribirse en
+    -- cualquier SuperEvento ajeno y rompería el consentimiento explícito.
+    --
+    -- La subconsulta pasa por super_events_read, así que depende de que esa política
+    -- deje ver el SuperEvento por created_by_municipality_id.
+    OR (
+      municipality_id = current_tenant()
+      AND super_event_id IN (
+          SELECT se.super_event_id FROM SuperEvents se
+          WHERE se.created_by_municipality_id = current_tenant()
+      )
     )
   );
 
@@ -383,12 +410,18 @@ CREATE POLICY cip_intermunicipal_read ON CenterItemPriority
 -- 7e. Aviso de oferta a la comuna DESTINO. Igual que en 002c, pero sobre
 --     super_event_id: la política centernotif_tenant solo deja escribir avisos
 --     para la propia comuna, y avisarle a la otra es justamente el punto.
-CREATE OR REPLACE FUNCTION notify_support_offer(p_offer_id INT) RETURNS UUID
+--
+--     Devuelve CUÁNTOS avisos insertó, igual que notify_super_event_invitation, y no
+--     el id de uno: inserta una fila por persona que pueda responder, así que un
+--     RETURNING ... INTO escalar reventaba con "query returned more than one row" en
+--     cuanto la comuna destino tenía más de un destinatario elegible —el caso de Viña,
+--     que además del administrador tiene un apoyo admin—.
+CREATE OR REPLACE FUNCTION notify_support_offer(p_offer_id INT) RETURNS INT
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
-  v_offer RECORD;
-  v_from  TEXT;
-  v_id    UUID;
+  v_offer      RECORD;
+  v_from       TEXT;
+  v_insertadas INT;
 BEGIN
   SELECT o.offer_id, o.super_event_id, o.from_municipality_id, o.target_center_id,
          c.municipality_id AS target_municipality_id, c.name AS center_name
@@ -428,12 +461,13 @@ BEGIN
   FROM Users u
   WHERE u.municipality_id = v_offer.target_municipality_id
     AND u.is_active = TRUE
-    AND (u.role_id = 1 OR u.es_apoyo_admin = TRUE)
-  RETURNING notification_id INTO v_id;
+    AND (u.role_id = 1 OR u.es_apoyo_admin = TRUE);
+
+  GET DIAGNOSTICS v_insertadas = ROW_COUNT;
 
   -- Si la comuna destino no tiene a nadie que pueda responder, el aviso queda
   -- dirigido a la comuna para que no se pierda.
-  IF v_id IS NULL THEN
+  IF v_insertadas = 0 THEN
     INSERT INTO CenterNotifications
       (center_id, municipality_id, super_event_id, title, message, channel, kind)
     VALUES (
@@ -445,11 +479,11 @@ BEGIN
         '. Revisa la oferta para aceptarla o rechazarla.',
       'system',
       'support_offer'
-    )
-    RETURNING notification_id INTO v_id;
+    );
+    v_insertadas := 1;
   END IF;
 
-  RETURN v_id;
+  RETURN v_insertadas;
 END;
 $$;
 
@@ -486,7 +520,7 @@ LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE AS $$
   LEFT JOIN Users u      ON u.user_id = o.created_by
   WHERE is_superadmin()
      OR o.from_municipality_id = current_tenant()
-     OR c.municipality_id = current_tenant()
+     OR (o.status <> 'draft' AND c.municipality_id = current_tenant())
   ORDER BY o.created_at DESC;
 $$;
 

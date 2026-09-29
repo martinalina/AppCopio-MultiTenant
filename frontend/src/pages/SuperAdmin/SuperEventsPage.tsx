@@ -265,8 +265,9 @@ function CreateDialog({
 }
 
 /**
- * Agrupa emergencias existentes. Las comunas dueñas quedan 'participando' sin
- * pasar por invitación: el acto de agrupar ES la decisión de que colaboran.
+ * Agrupa emergencias existentes. Las comunas dueñas quedan 'invitada' y deben
+ * aceptar: agrupar vincula la emergencia, pero no da el consentimiento por la
+ * comuna. Al aceptar pueden confirmar la agrupada o aportar otra.
  *
  * Una comuna solo puede aportar UNA emergencia por SuperEvento, así que el
  * backend rechaza una selección con dos de la misma comuna.
@@ -291,7 +292,7 @@ function GroupDialog({
     setError(null);
     try {
       const r = await groupEmergencies(superEvento.super_event_id, seleccion);
-      onHecho(`Se agruparon ${r.agrupadas.length} emergencia(s). Sus comunas quedaron participando.`);
+      onHecho(`Se agruparon ${r.agrupadas.length} emergencia(s). Sus comunas quedaron invitadas y deben aceptar.`);
       onClose();
     } catch (e: any) {
       setError(mensajeError(e, "No se pudo agrupar."));
@@ -305,8 +306,9 @@ function GroupDialog({
       <DialogTitle>Agrupar emergencias en «{superEvento?.name}»</DialogTitle>
       <DialogContent>
         <DialogContentText sx={{ mb: 2 }}>
-          Las comunas dueñas quedarán participando de inmediato, sin invitación: agrupar
-          ya es la decisión de que colaboran. Solo una emergencia por comuna.
+          Las comunas dueñas recibirán una invitación con la emergencia ya preseleccionada.
+          Sus centros no se comparten hasta que acepten, y pueden aportar otra emergencia
+          en su lugar. Solo una emergencia por comuna.
         </DialogContentText>
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
         <Stack>

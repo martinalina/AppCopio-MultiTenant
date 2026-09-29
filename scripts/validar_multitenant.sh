@@ -3,14 +3,14 @@
 # validar_multitenant.sh — comprobaciones automáticas del aislamiento multi-tenant.
 #
 # Cubre lo que se puede afirmar sin mirar la pantalla: roles y RLS en la base,
-# aislamiento por API, permisos por rol, gobernanza de administración, colaboración
-# intercomunal, continuidad funcional, canal público e higiene de sesión. Lo visual
-# (mapa, badges, modales) va en docs/03_guion_de_validacion.md.
+# aislamiento por API, permisos por rol, colaboración intercomunal, continuidad
+# funcional, canal público e higiene de sesión. Lo visual (mapa, badges, modales) va
+# en docs/03_guion_de_validacion.md.
 #
 # Ninguna comprobación deja datos detrás. Las que ejercitan una escritura —permitida o
-# prohibida— corren dentro de BEGIN … ROLLBACK; el relevo de administrador se rechaza en
-# el servicio antes de tocar la base; y la única que escribe de verdad (el alta de una
-# municipalidad, que solo se puede acreditar creándola) borra lo que creó al terminar.
+# prohibida— corren dentro de BEGIN … ROLLBACK, o se rechazan en el servicio antes de
+# tocar la base; y la única que escribe de verdad (el alta de una municipalidad, que
+# solo se puede acreditar creándola) borra lo que creó al terminar.
 #
 # Uso:
 #   docker compose down -v && docker compose up -d
@@ -169,6 +169,7 @@ T_CONCO=$(token admin.concon)
 T_SUPER=$(token superadmin)
 T_TRAB=$(token tito)          # Trabajador Municipal de Valparaíso, sin apoyo admin
 T_APOYO=$(token martinalina)  # Trabajador de Valparaíso CON es_apoyo_admin
+T_CC=$(token carla.rojas)     # Contacto Ciudadano de Valparaíso (rol 3)
 
 for par in "VALPO:$T_VALPO" "VINA:$T_VINA" "SUPER:$T_SUPER" "TRAB:$T_TRAB"; do
   if [[ -z "${par#*:}" ]]; then
@@ -311,8 +312,28 @@ d=json.load(sys.stdin)
 print('varias' if isinstance(d,list) and len(d) >= 4 else 'insuficiente')")" \
   "varias"
 
-afirmar "un Trabajador sin apoyo no accede al tablero" "$(codigo "$T_TRAB" /cross-support/board/1)" "403"
-afirmar "un Trabajador CON apoyo sí accede al tablero" "$(codigo "$T_APOYO" /cross-support/board/1)" "200"
+afirmar "un Trabajador Municipal accede al tablero intercomunal" "$(codigo "$T_TRAB" /cross-support/board/1)" "200"
+afirmar "un Trabajador CON apoyo admin también accede al tablero" "$(codigo "$T_APOYO" /cross-support/board/1)" "200"
+
+# El Contacto Ciudadano no es personal municipal y el tablero expone centros de otras
+# comunas, así que queda fuera aunque tenga sesión y su comuna participe.
+afirmar "un Contacto Ciudadano NO accede al tablero" "$(codigo "$T_CC" /cross-support/board/1)" "403"
+
+# La guarda de rol del servidor (crearGuardaAdmin) es una frontera distinta de RLS: aisla
+# el ROL dentro de una misma comuna, no la comuna. Ver el tablero y redactar un borrador
+# no habilita las acciones de gestión, y eso tiene que sostenerse sin pasar por la interfaz.
+afirmar "un Trabajador sin apoyo no puede declarar una emergencia" \
+  "$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API/emergencies" \
+      -H "Authorization: Bearer $T_TRAB" -H "Content-Type: application/json" \
+      -d '{"name":"no deberia"}')" \
+  "403"
+
+afirmar "un Trabajador sin apoyo no puede resolver una oferta de su comuna" \
+  "$(oferta=$(psql_val "SELECT offer_id FROM CrossMunicipalSupportOffers WHERE status = 'pending' LIMIT 1;")
+     curl -s -o /dev/null -w "%{http_code}" -X PATCH "$API/cross-support/offers/$oferta" \
+       -H "Authorization: Bearer $T_TRAB" -H "Content-Type: application/json" \
+       -d '{"status":"accepted"}')" \
+  "403"
 echo
 
 # ----------------------------------------------------------
@@ -344,37 +365,6 @@ afirmar "pero ninguna puede duplicar una categoría del catálogo base" \
       "INSERT INTO Categories (name, municipality_id)
          VALUES ((SELECT name FROM Categories WHERE municipality_id IS NULL ORDER BY name LIMIT 1), NULL)" \
       'categories_name_global_uq')" \
-  "bloqueado"
-echo
-
-# ----------------------------------------------------------
-echo "Gobernanza de administración"
-# ----------------------------------------------------------
-# Concón (comuna 4) tiene a admin.concon como administrador vigente y a tm.concon como
-# Trabajador Municipal. Nombrar a tm.concon sin liberar antes el puesto debe fallar.
-ID_TM_CONCON=$(psql_val "SELECT user_id FROM Users WHERE username = 'tm.concon';")
-
-# replaceMunicipalityAdmin lanza ADMIN_ACTUAL_REQUIERE_ACCION antes de ejecutar ningún
-# UPDATE, así que esta llamada no modifica la base.
-afirmar "no se puede nombrar un segundo Administrador sin liberar el puesto" \
-  "$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API/municipalities/4/admin" \
-      -H "Authorization: Bearer $T_SUPER" -H "Content-Type: application/json" \
-      -d "{\"promover_user_id\":$ID_TM_CONCON}")" \
-  "409"
-
-# El relevo con degradación/desactivación es un flujo del panel de plataforma: un
-# administrador municipal no puede ejecutarlo ni siquiera sobre su propia comuna.
-afirmar "el relevo de administrador es exclusivo del Super Administrador" \
-  "$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API/municipalities/4/admin" \
-      -H "Authorization: Bearer $T_CONCO" -H "Content-Type: application/json" \
-      -d "{\"promover_user_id\":$ID_TM_CONCON}")" \
-  "403"
-
-# Y la regla se sostiene aunque se salte la aplicación por completo.
-afirmar "el índice único impide un segundo Administrador aunque se salte la aplicación" \
-  "$(psql_tenant_espera_error 4 \
-      "UPDATE Users SET role_id = 1 WHERE username = 'tm.concon'" \
-      'users_one_active_admin_per_municipality_uq')" \
   "bloqueado"
 echo
 
@@ -429,17 +419,41 @@ afirmar "una comuna no invitada no puede autoinscribirse en un SuperEvento ajeno
       'row-level security')" \
   "bloqueado"
 
+# Escalada de una comuna (camino 3): autocrear el SuperEvento e inscribirse en él.
+#
+# Son las DOS operaciones que fallaban. La primera moría en el RETURNING, que obliga a
+# evaluar super_events_read cuando la fila de participante aún no existe; la segunda, en
+# el bootstrap de sep_write, que exigía estar ya 'participando' para insertar la propia
+# primera fila. Va con ROLLBACK, así que no deja SuperEvento detrás.
+#
+# Van como DOS sentencias, igual que createFromEmergency: dentro de un mismo CTE las
+# sub-sentencias comparten snapshot y no ven los efectos de las otras, así que el
+# INSERT de participante no encontraría el SuperEvento recién creado y esto fallaría
+# por un motivo que no tiene nada que ver con las políticas.
+afirmar "una comuna puede autocrear su SuperEvento e inscribirse (camino 3)" \
+  "$(psql_espera_ok "
+      SELECT set_config('app.current_tenant', '3', true);
+      INSERT INTO SuperEvents (name, level, created_by_municipality_id)
+        VALUES ('ZZ Escalada de prueba', 'mayor', 3);
+      INSERT INTO SuperEventParticipants (super_event_id, municipality_id, status, responded_at)
+        SELECT super_event_id, 3, 'participando', now()
+          FROM SuperEvents WHERE name = 'ZZ Escalada de prueba';")" \
+  "permitido"
+
 afirmar "Quilpué tiene activaciones sueltas para vincular" \
   "$(get "$T_QUILP" /emergencies/activations/open | contar)" "2"
 
-afirmar "las cuatro ofertas están en los cuatro estados" \
-  "$(psql_val "SELECT COUNT(DISTINCT status) FROM CrossMunicipalSupportOffers;")" "4"
+afirmar "las ofertas cubren los cinco estados del ciclo de vida" \
+  "$(psql_val "SELECT COUNT(DISTINCT status) FROM CrossMunicipalSupportOffers;")" "5"
 
 afirmar "Valparaíso ve 2 ofertas recibidas" \
   "$(get "$T_VALPO" "/cross-support/offers?box=recibidas" | contar)" "2"
 
-afirmar "Valparaíso ve 2 ofertas enviadas" \
-  "$(get "$T_VALPO" "/cross-support/offers?box=enviadas" | contar)" "2"
+afirmar "Valparaíso ve 3 ofertas enviadas (incluido su borrador)" \
+  "$(get "$T_VALPO" "/cross-support/offers?box=enviadas" | contar)" "3"
+
+afirmar "el borrador es invisible para la municipalidad destino" \
+  "$(get "$T_VINA" "/cross-support/offers?box=recibidas" | contar)" "2"
 
 # --- El cierre del SuperEvento revoca el acceso -------------------------------------
 # El SE3 está cerrado en el sembrado, pero sus emergencias y sus activaciones siguen

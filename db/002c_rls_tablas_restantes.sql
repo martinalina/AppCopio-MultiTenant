@@ -331,8 +331,11 @@ CREATE POLICY cmso_read ON CrossMunicipalSupportOffers
   USING (
     is_superadmin()
     OR from_municipality_id = current_tenant()
-    OR target_center_id IN (
-        SELECT c.center_id FROM Centers c WHERE c.municipality_id = current_tenant()
+    OR (
+      status <> 'draft'
+      AND target_center_id IN (
+          SELECT c.center_id FROM Centers c WHERE c.municipality_id = current_tenant()
+      )
     )
   );
 

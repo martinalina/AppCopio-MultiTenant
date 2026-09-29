@@ -30,6 +30,13 @@ type Props = {
   superEventName: string;
   /** Emergencias locales abiertas y sin SuperEvento: las únicas que se pueden aportar. */
   emergenciasDisponibles: Emergency[];
+  /**
+   * Emergencia que YA está vinculada a este SuperEvento, si el Super Administrador
+   * agrupó a la comuna en vez de invitarla en frío. No aparece en
+   * `emergenciasDisponibles` —esa lista exige super_event_id nulo—, pero es la que
+   * corresponde aportar: el backend la acepta de forma idempotente.
+   */
+  emergenciaVinculada?: Emergency | null;
   enviando: boolean;
   error: string | null;
   onClose: () => void;
@@ -39,7 +46,8 @@ type Props = {
 };
 
 export default function AcceptSuperEventDialog({
-  abierto, superEventName, emergenciasDisponibles, enviando, error, onClose, onAceptar,
+  abierto, superEventName, emergenciasDisponibles, emergenciaVinculada, enviando, error,
+  onClose, onAceptar,
 }: Props) {
   const [modo, setModo] = React.useState<"existente" | "nueva">("existente");
   const [emergencyId, setEmergencyId] = React.useState<number | "">("");
@@ -49,16 +57,24 @@ export default function AcceptSuperEventDialog({
   const [centros, setCentros] = React.useState<ActivacionVinculada[] | null>(null);
   const [cargandoCentros, setCargandoCentros] = React.useState(false);
 
+  // La agrupada va primero: es la que el SuperEvento ya tiene y la que se espera
+  // confirmar. El resto de la maquinaria (vista previa de centros, confirmación) no
+  // necesita distinguirla, porque se aporta igual que cualquier otra existente.
+  const opcionesExistentes = React.useMemo(
+    () => (emergenciaVinculada ? [emergenciaVinculada, ...emergenciasDisponibles] : emergenciasDisponibles),
+    [emergenciaVinculada, emergenciasDisponibles]
+  );
+
   // Sin emergencias disponibles, el único camino posible es crear una.
   React.useEffect(() => {
     if (abierto) {
-      setModo(emergenciasDisponibles.length > 0 ? "existente" : "nueva");
-      setEmergencyId("");
+      setModo(opcionesExistentes.length > 0 ? "existente" : "nueva");
+      setEmergencyId(emergenciaVinculada?.emergency_id ?? "");
       setNombre("");
       setTipo("");
       setCentros(null);
     }
-  }, [abierto, emergenciasDisponibles.length]);
+  }, [abierto, opcionesExistentes.length, emergenciaVinculada?.emergency_id]);
 
   // La vista previa es lo que evita que la comuna comparta centros sin saberlo.
   React.useEffect(() => {
@@ -98,13 +114,21 @@ export default function AcceptSuperEventDialog({
 
         {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
+        {emergenciaVinculada && (
+          <Alert severity="info" sx={{ mb: 2 }}>
+            El Super Administrador agrupó «{emergenciaVinculada.name}» bajo este
+            SuperEvento, así que ya viene preseleccionada. Tus centros no se comparten
+            con nadie hasta que aceptes.
+          </Alert>
+        )}
+
         <RadioGroup value={modo} onChange={(e) => setModo(e.target.value as "existente" | "nueva")}>
           <FormControlLabel
             value="existente"
             control={<Radio />}
-            disabled={emergenciasDisponibles.length === 0}
+            disabled={opcionesExistentes.length === 0}
             label={
-              emergenciasDisponibles.length === 0
+              opcionesExistentes.length === 0
                 ? "Usar una emergencia existente (no tienes ninguna disponible)"
                 : "Usar una emergencia que ya tengo"
             }
@@ -117,10 +141,11 @@ export default function AcceptSuperEventDialog({
                   labelId="em-label" label="Emergencia" value={emergencyId}
                   onChange={(e) => setEmergencyId(e.target.value === "" ? "" : Number(e.target.value))}
                 >
-                  {emergenciasDisponibles.map((em) => (
+                  {opcionesExistentes.map((em) => (
                     <MenuItem key={em.emergency_id} value={em.emergency_id}>
                       {em.name}
                       {em.type ? ` · ${em.type}` : ""}
+                      {em.emergency_id === emergenciaVinculada?.emergency_id ? " · ya agrupada" : ""}
                     </MenuItem>
                   ))}
                 </Select>
@@ -198,5 +223,6 @@ export function EstadoParticipacionChip({ estado }: { estado: string | null }) {
   if (!estado) return <Chip label="No invitada" size="small" variant="outlined" />;
   const color =
     estado === "participando" ? "success" : estado === "invitada" ? "warning" : "default";
+  // 'retirada' comparte el color neutro de 'rechazada'; la etiqueta ya las distingue.
   return <Chip label={estado} color={color as any} size="small" />;
 }

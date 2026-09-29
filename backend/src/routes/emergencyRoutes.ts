@@ -17,7 +17,7 @@
 // otra emergencia y deben trasladarse.
 import { Router, RequestHandler } from 'express';
 import pool from '../config/db';
-import { requireUser, requireTenant } from '../auth/requireUser';
+import { requireUser, requireTenant, crearGuardaAdmin } from '../auth/requireUser';
 import {
   createEmergency as crearEmergencia,
   invitarActivaciones,
@@ -26,8 +26,22 @@ import {
   responderActivacion,
   vincularActivaciones,
 } from '../services/emergencyService';
+import { estadoDe, retirarComuna } from '../services/superEventService';
 
 const router = Router();
+
+/**
+ * Gestionar la emergencia (crearla, cerrarla, invitar o vincular centros) es un acto
+ * del administrador de la comuna, o de un trabajador con es_apoyo_admin.
+ *
+ * Hace falta acá y no solo en el ProtectedRoute de App.tsx: RLS aísla la comuna, no
+ * el rol dentro de ella, así que sin esta guarda un trabajador municipal o un
+ * contacto ciudadano podía crear y cerrar emergencias llamando directo a la API.
+ * El Super Administrador no entra: no tiene comuna (ver requireTenant).
+ */
+const soloAdminOApoyo = crearGuardaAdmin({
+  message: 'Solo el administrador de la comuna gestiona las emergencias.',
+});
 
 function manejarError(res: any, err: any, contexto: string) {
   if (err?.status) {
@@ -144,13 +158,32 @@ const closeEmergency: RequestHandler = async (req, res) => {
       return;
     }
 
+    // Cerrar la emergencia que aporta la comuna la retira del SuperEvento: sin esto
+    // seguiría compartiendo centros por una emergencia ya terminada. super_event_id
+    // se lee del RETURNING de arriba, antes de que retirarComuna lo ponga en NULL.
+    // Solo si estaba 'participando'; una 'invitada' se queda como está y decide ella.
+    const superEventId: number | null = rows[0].super_event_id;
+    let retiradaDeSuperEvento = false;
+    if (superEventId != null) {
+      const municipalityId = requireTenant(req);
+      if ((await estadoDe(pool, superEventId, municipalityId)) === 'participando') {
+        await retirarComuna(pool, superEventId, municipalityId);
+        retiradaDeSuperEvento = true;
+      }
+    }
+
     const { rows: pendientes } = await pool.query(
       `SELECT COUNT(*)::int AS abiertas FROM CentersActivations
         WHERE emergency_id = $1 AND ended_at IS NULL`,
       [emergencyId]
     );
 
-    res.json({ ...rows[0], activaciones_abiertas: pendientes[0]?.abiertas ?? 0 });
+    res.json({
+      ...rows[0],
+      ...(retiradaDeSuperEvento && { super_event_id: null }),
+      retirada_de_superevento: retiradaDeSuperEvento,
+      activaciones_abiertas: pendientes[0]?.abiertas ?? 0,
+    });
   } catch (err: any) {
     manejarError(res, err, 'closeEmergency');
   }
@@ -358,17 +391,24 @@ const respondActivation: RequestHandler = async (req, res) => {
   }
 };
 
+// Las tres rutas SIN soloAdminOApoyo son deliberadas:
+//   - GET / y GET /activations/open las consume "Mis Centros" desde una sesión de
+//     trabajador municipal, y GET / además ActiveCenterDialog y SuperEventInviteDialog.
+//   - POST /:id/activations/:aid/respond la responde el ENCARGADO del centro, no el
+//     administrador: es el consentimiento por centro descrito arriba, y el diálogo
+//     que la llama vive en MainLayout, visible para cualquier usuario con sesión.
+// El resto es gestión y queda en manos del administrador.
 router.get('/', listEmergencies);
-router.post('/', createEmergency);
+router.post('/', soloAdminOApoyo, createEmergency);
 // Ojo: las rutas de 'activations' van antes de '/:emergencyId/...' para que el router
 // no interprete "activations" como un emergency_id.
 router.get('/activations/open', listOwnOpenActivations);
-router.patch('/activations/:activationId', linkActivation);
-router.get('/:emergencyId/activations', listActivations);
-router.get('/:emergencyId/linked-activations', listLinked);
-router.post('/:emergencyId/invite-activations', inviteActivations);
-router.post('/:emergencyId/link-activations', linkActivationsBulk);
+router.patch('/activations/:activationId', soloAdminOApoyo, linkActivation);
+router.get('/:emergencyId/activations', soloAdminOApoyo, listActivations);
+router.get('/:emergencyId/linked-activations', soloAdminOApoyo, listLinked);
+router.post('/:emergencyId/invite-activations', soloAdminOApoyo, inviteActivations);
+router.post('/:emergencyId/link-activations', soloAdminOApoyo, linkActivationsBulk);
 router.post('/:emergencyId/activations/:activationId/respond', respondActivation);
-router.patch('/:emergencyId/close', closeEmergency);
+router.patch('/:emergencyId/close', soloAdminOApoyo, closeEmergency);
 
 export default router;

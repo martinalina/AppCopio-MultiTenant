@@ -165,7 +165,7 @@ export default function SharedCentersMap({ centros, ubicacion, onOfrecer }: Prop
                   >
                     <Box
                       sx={{
-                        width: 26, height: 26, borderRadius: "50%",
+                        width: 35, height: 35, borderRadius: "50%",
                         bgcolor: COLOR_URGENCIA[urgencia],
                         border: "2px solid #fff",
                         boxShadow: 2,

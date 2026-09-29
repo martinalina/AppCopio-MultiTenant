@@ -99,11 +99,17 @@ export default function App() {
                   Super Administrador y una ruta duplicada la ganaría este bloque. */}
               <Route path={paths.myCenters} element={<MisCentrosPage />} />
               <Route path={paths.notifications} element={<NotificationsPage />} />
-              {/* Emergencias locales y SuperEventos: solo el administrador de la
-                  comuna decide participar y comprometer datos con otras comunas. */}
+              {/* Emergencias locales y gestión de SuperEventos: solo el administrador
+                  de la comuna decide participar y comprometer datos con otras comunas. */}
               <Route element={<ProtectedRoute allowedRoleIds={[1]} checkSupportAdmin={true} />}>
                 <Route path={paths.emergencies} element={<EmergenciesPage />} />
                 <Route path={paths.superEvents} element={<SuperEventsPage />} />
+              </Route>
+              {/* Tablero y ofertas: el personal municipal en terreno puede consultarlos
+                  y redactar borradores; el admin aprueba antes de enviarlos al destino.
+                  El Contacto Ciudadano (rol 3) queda fuera: el tablero expone centros
+                  de otras comunas. Debe coincidir con soloPersonalMunicipal del backend. */}
+              <Route element={<ProtectedRoute allowedRoleIds={[1, 2]} checkSupportAdmin={true} />}>
                 <Route path={paths.intermunicipalBoard} element={<IntermunicipalBoardPage />} />
                 <Route path={paths.supportOffers} element={<SupportOffersPage />} />
               </Route>

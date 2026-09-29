@@ -37,7 +37,7 @@ export const ETIQUETA_NIVEL: Record<NivelEvento, string> = {
   catastrofe: "Catástrofe",
 };
 
-export type EstadoParticipacion = "invitada" | "participando" | "rechazada";
+export type EstadoParticipacion = "invitada" | "participando" | "rechazada" | "retirada";
 
 export type SuperEvent = {
   super_event_id: number;
@@ -169,6 +169,18 @@ export async function respondSuperEvent(
   avisos_a_encargados?: number;
 }> {
   const { data } = await api.post(`/super-events/${superEventId}/respond`, payload);
+  return data;
+}
+
+/**
+ * La comuna participante se retira sin cerrar el SuperEvento: deja de compartir sus
+ * centros y su emergencia sale del SuperEvento. También ocurre al cerrar esa emergencia.
+ */
+export async function withdrawFromSuperEvent(superEventId: number): Promise<{
+  super_event_id: number;
+  status: EstadoParticipacion;
+}> {
+  const { data } = await api.post(`/super-events/${superEventId}/withdraw`);
   return data;
 }
 

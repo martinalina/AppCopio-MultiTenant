@@ -39,6 +39,7 @@ import LocationCityIcon from "@mui/icons-material/LocationCity";
 import CampaignIcon from "@mui/icons-material/Campaign";
 import HubIcon from "@mui/icons-material/Hub";
 import HandshakeIcon from "@mui/icons-material/Handshake";
+import VolunteerActivismIcon from "@mui/icons-material/VolunteerActivism";
 import VerifiedUserIcon from "@mui/icons-material/VerifiedUser";
 import LoginIcon from "@mui/icons-material/Login";
 import MenuIcon from "@mui/icons-material/Menu";
@@ -297,10 +298,29 @@ export default function VerticalNavbar() {
                 onClick={handleNavItemClick}
               />
               <NavItem to={paths.myShifts} icon={<WorkIcon />} label="Mis Turnos" isCollapsed={isCollapsed} onClick={handleNavItemClick} />
+              {/* Colaboración intercomunal para el personal en terreno: el encargado de
+                  una activación es quien sabe qué puede ofrecer su centro. Va acotado al
+                  Trabajador Municipal —isFieldUser también incluye al Contacto
+                  Ciudadano, que no entra al tablero y vería un enlace que lo rebota. */}
+              {isMunicipalWorker(user) && (
+                <>
+                  <NavItem
+                    to={paths.intermunicipalBoard}
+                    icon={<HandshakeIcon />}
+                    label="Apoyo intercomunal"
+                    isCollapsed={isCollapsed}
+                    onClick={handleNavItemClick}
+                  />
+                  <NavItem
+                    to={paths.supportOffers}
+                    icon={<VolunteerActivismIcon />}
+                    label="Ofertas de apoyo"
+                    isCollapsed={isCollapsed}
+                    onClick={handleNavItemClick}
+                  />
+                </>
+              )}
           </>
-          
-          
-          
         )}
         {/* Admin Menu (Agrupado) */}
         {isAdminOrSupport(user) && (
@@ -402,6 +422,13 @@ export default function VerticalNavbar() {
                   to={paths.intermunicipalBoard}
                   icon={<HandshakeIcon />}
                   label="Apoyo intercomunal"
+                  isCollapsed={false}
+                  onClick={handleNavItemClick}
+                />
+                <NavItem
+                  to={paths.supportOffers}
+                  icon={<VolunteerActivismIcon />}
+                  label="Ofertas de apoyo"
                   isCollapsed={false}
                   onClick={handleNavItemClick}
                 />

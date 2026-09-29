@@ -66,7 +66,7 @@ CREATE TABLE CrossMunicipalSupportOffers (
     item_id              INT REFERENCES Products(item_id),
     message              TEXT,
     created_by           INT REFERENCES Users(user_id) ON DELETE SET NULL,
-    status               TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','rejected','cancelled')),
+    status               TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('draft','pending','accepted','rejected','cancelled')),
     created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

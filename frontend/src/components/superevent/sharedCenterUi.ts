@@ -6,7 +6,7 @@ import type { NivelUrgencia } from "@/services/crossSupport.service";
 
 export const COLOR_PRIORIDAD: Record<string, "error" | "warning" | "default"> = {
   alto: "error",
-  medio: "warning",
+  medio: "warning", 
   bajo: "default",
 };
 
@@ -14,7 +14,7 @@ export const COLOR_PRIORIDAD: Record<string, "error" | "warning" | "default"> = 
 export const COLOR_URGENCIA: Record<NivelUrgencia, string> = {
   alto: "#d32f2f",
   medio: "#ed6c02",
-  bajo: "#0288d1",
+  bajo: "#2e7d32",
   ninguna: "#9e9e9e",
 };
 

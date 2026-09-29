@@ -42,3 +42,18 @@ export function isMunicipalWorker(u?: User | null) {
   if (!u) return false;
   return u.role_id === ROLE_ID_TMO;
 }
+
+/**
+ * Puede consultar el tablero intercomunal y redactar borradores de oferta.
+ *
+ * Incluye al trabajador municipal, que es quien está en terreno y sabe qué puede
+ * ofrecer su centro, pero deja fuera al Contacto Ciudadano: el tablero expone
+ * centros y necesidades de OTRAS comunas.
+ *
+ * Debe coincidir con soloPersonalMunicipal del backend y con los allowedRoleIds de
+ * las rutas del tablero y las ofertas en App.tsx.
+ */
+export function canSeeIntermunicipal(u?: User | null) {
+  if (!u) return false;
+  return u.role_id === ROLE_ID_ADMIN || u.role_id === ROLE_ID_TMO || !!u.es_apoyo_admin;
+}
