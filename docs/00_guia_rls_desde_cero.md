@@ -983,7 +983,7 @@ un `ALTER` a mano contra una base viva: el entorno se recrea entero con
 
 ## 10. Los tropiezos reales (y qué enseña cada uno)
 
-El catálogo completo está en `docs/02_implementacion_tecnica.md`, sección 6, con 39
+El catálogo completo está en `docs/02_implementacion_tecnica.md`, sección 6, con 40
 problemas numerados. Aquí van los que mejor explican **cómo se comporta RLS en la
 práctica**, que es distinto de cómo se lee en la documentación.
 
@@ -1302,7 +1302,7 @@ finishTx ............ COMMIT si status < 400, ROLLBACK si no
 | Documento | Para qué |
 | --- | --- |
 | `docs/01_modelo_de_negocio.md` | Las decisiones de dominio: qué se comparte y por qué |
-| `docs/02_implementacion_tecnica.md` | El detalle técnico y los 39 problemas numerados |
+| `docs/02_implementacion_tecnica.md` | El detalle técnico y los 40 problemas numerados |
 | `docs/03_guion_de_validacion.md` | El guión de validación visual, pantalla por pantalla |
 | `docs/04_entidades_y_flujo_multitenant.md` | Entidades y flujos de emergencias y SuperEventos |
 | `AppCopio_MultiTenant_Plan.md` | El plan de migración paso a paso |

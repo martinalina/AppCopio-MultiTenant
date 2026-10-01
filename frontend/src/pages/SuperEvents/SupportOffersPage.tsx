@@ -6,7 +6,7 @@
 import * as React from "react";
 import {
   Alert, Box, Button, Chip, CircularProgress, Paper, Stack, Tab, Table, TableBody,
-  TableCell, TableContainer, TableHead, TableRow, Tabs, Typography,
+  TableCell, TableContainer, TableHead, TableRow, Tabs, Tooltip, Typography,
 } from "@mui/material";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import { useNavigate } from "react-router-dom";
@@ -14,7 +14,16 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { paths } from "@/routes/paths";
 import { isAdminOrSupport } from "@/utils/authz";
-import { listOffers, setOfferStatus, type Oferta, type EstadoOferta } from "@/services/crossSupport.service";
+import {
+  listOffers, setOfferStatus, type Oferta, type EstadoOferta, type MotivoCancelacion,
+} from "@/services/crossSupport.service";
+
+// Cierre automático, no decisión de un usuario: la comuna se retiró y todo lo que
+// tenía sin resolver en el SuperEvento se canceló solo.
+const EXPLICACION_CIERRE: Record<MotivoCancelacion, string> = {
+  origen_retirada: "Se canceló automáticamente: la comuna que ofrecía se retiró del SuperEvento.",
+  destino_retirada: "Se canceló automáticamente: la comuna destino se retiró del SuperEvento.",
+};
 
 const COLOR_ESTADO: Record<EstadoOferta, "info" | "warning" | "success" | "error" | "default"> = {
   draft: "info",
@@ -131,7 +140,16 @@ export default function SupportOffersPage() {
                   <TableCell sx={{ maxWidth: 260 }}>{o.message ?? "—"}</TableCell>
                   <TableCell>{o.super_event_name}</TableCell>
                   <TableCell>
-                    <Chip size="small" label={ETIQUETA_ESTADO[o.status]} color={COLOR_ESTADO[o.status]} />
+                    <Tooltip
+                      title={o.cancel_reason ? EXPLICACION_CIERRE[o.cancel_reason] : ""}
+                      disableHoverListener={!o.cancel_reason}
+                    >
+                      <Chip
+                        size="small"
+                        label={o.cancel_reason ? "Cancelada (comuna retirada)" : ETIQUETA_ESTADO[o.status]}
+                        color={COLOR_ESTADO[o.status]}
+                      />
+                    </Tooltip>
                   </TableCell>
                   <TableCell align="right">
                     {!puedeResolver ? (

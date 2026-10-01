@@ -11,6 +11,9 @@
 //   - la comuna que la ENVIÓ  -> cancelled
 //   - la comuna que la RECIBE -> accepted / rejected
 // Se valida acá y además en la política cmso_update de la base de datos.
+//
+// Además, cuando una comuna se retira del SuperEvento sus ofertas sin resolver se
+// cancelan solas (cancel_reason = origen_retirada / destino_retirada). Ver retirarComuna.
 import { Router, RequestHandler } from 'express';
 import pool from '../config/db';
 import {
@@ -250,6 +253,23 @@ const updateStatus: RequestHandler = async (req, res) => {
       // del cierre se podría enviar después, saltándose la revocación.
       if (!(await comunaParticipa(oferta.super_event_id, res))) return;
 
+      // Y el destino tiene que seguir siendo un centro compartido: si la comuna
+      // destino se retiró (o cerró su emergencia) mientras el borrador esperaba,
+      // enviarlo dejaría una oferta pendiente hacia una comuna que ya no ve nada.
+      // Este borrador no se cancela solo al retirarse el destino, porque la política
+      // de lectura se lo oculta; por eso se corta acá.
+      const { rows: compartido } = await pool.query(
+        `SELECT 1 FROM super_event_shared_centers($1) WHERE center_id = $2`,
+        [oferta.super_event_id, oferta.target_center_id]
+      );
+      if (compartido.length === 0) {
+        res.status(409).json({
+          error: 'CENTRO_NO_DISPONIBLE',
+          message: 'El centro destino ya no participa en el SuperEvento; el borrador no se puede enviar.',
+        });
+        return;
+      }
+
       const resultado = await setOfferStatus(pool, offerId, 'pending');
       await pool.query(`SELECT notify_support_offer($1)`, [offerId]);
       res.json(resultado);
@@ -287,6 +307,9 @@ const updateStatus: RequestHandler = async (req, res) => {
       });
       return;
     }
+    // Responder también compromete a la comuna con el SuperEvento: exige seguir
+    // participando y que siga vigente, igual que crear o enviar una oferta.
+    if (!(await comunaParticipa(oferta.super_event_id, res))) return;
 
     res.json(await setOfferStatus(pool, offerId, status));
   } catch (err: any) {

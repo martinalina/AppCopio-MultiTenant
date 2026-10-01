@@ -236,8 +236,10 @@ export async function createFromEmergency(
  * nada: super_event_shared_centers() exige que la comuna dueña esté 'participando'
  * para exponer sus centros.
  *
- * Las que ya tenían fila conservan su estado —incluida una 'rechazada'—, que es lo
- * que este docblock prometía y el ON CONFLICT DO UPDATE anterior incumplía.
+ * Una comuna 'rechazada' o 'retirada' vuelve a 'invitada': agrupar es una de las dos
+ * formas en que el Super Administrador reinvita (la otra es POST /:id/invite), y es
+ * la única que se lo permite a alguien. Las 'invitada' y 'participando' conservan su
+ * estado.
  */
 export async function groupEmergencies(
   db: Db,
@@ -295,7 +297,7 @@ export async function groupEmergencies(
        VALUES ($1, $2, 'invitada', $3)
        ON CONFLICT (super_event_id, municipality_id) DO UPDATE
          SET status = 'invitada', responded_at = NULL, invited_by = EXCLUDED.invited_by
-         WHERE SuperEventParticipants.status = 'retirada'
+         WHERE SuperEventParticipants.status IN ('rechazada', 'retirada')
        RETURNING municipality_id`,
       [superEventId, e.created_by_municipality_id, invitedBy]
     );
@@ -348,7 +350,8 @@ export async function inviteMunicipalities(
   superEventId: number,
   municipalityIds: number[],
   invitedBy: number,
-  invitedByMunicipalityId: number | null
+  invitedByMunicipalityId: number | null,
+  esSuperadmin = false
 ) {
   const invitadas: number[] = [];
   const yaEstaban: number[] = [];
@@ -356,6 +359,30 @@ export async function inviteMunicipalities(
   for (const raw of municipalityIds) {
     const municipalityId = Number(raw);
     if (!Number.isFinite(municipalityId)) continue;
+
+    // Reinvitar a una comuna que ya rechazó o se retiró es solo del Super
+    // Administrador: si pudiera cualquier participante, en un evento de diez comunas
+    // una comuna recibiría la misma invitación una y otra vez. Acá SÍ sirve
+    // ON CONFLICT (a diferencia del camino municipal, ver más abajo) porque el Super
+    // Administrador pasa sep_read y ve la fila recién escrita. Solo se pisan
+    // 'rechazada' y 'retirada': una 'invitada' o 'participando' no devuelve fila y
+    // cuenta como "ya estaba".
+    if (esSuperadmin) {
+      const { rows } = await db.query(
+        `INSERT INTO SuperEventParticipants
+           (super_event_id, municipality_id, status, invited_by, invited_by_municipality_id)
+         VALUES ($1, $2, 'invitada', $3, NULL)
+         ON CONFLICT (super_event_id, municipality_id) DO UPDATE
+           SET status = 'invitada', responded_at = NULL,
+               invited_by = EXCLUDED.invited_by, invited_by_municipality_id = NULL
+           WHERE SuperEventParticipants.status IN ('rechazada', 'retirada')
+         RETURNING municipality_id`,
+        [superEventId, municipalityId, invitedBy]
+      );
+      if (rows.length > 0) invitadas.push(municipalityId);
+      else yaEstaban.push(municipalityId);
+      continue;
+    }
 
     await db.query('SAVEPOINT invitacion');
     try {
@@ -389,6 +416,16 @@ export async function inviteMunicipalities(
  * compartidos y las políticas intermunicipales exigen 'participando'. La emergencia
  * se suelta (vuelve a huérfana) para liberar el cupo de una por comuna. Las
  * activaciones y los centros no se tocan.
+ *
+ * Todo lo que la comuna tenía sin resolver en este SuperEvento se cancela solo:
+ * borradores y ofertas pendientes, tanto las que envió como las que recibió. Quedan
+ * 'cancelled' con cancel_reason, para distinguirlas de una cancelación hecha a mano.
+ * Las ya resueltas (aceptadas, rechazadas, canceladas) son historial y no se tocan.
+ *
+ * Corre como la propia comuna, sin función SECURITY DEFINER: cmso_update deja
+ * modificar a origen y destino. Los borradores AJENOS dirigidos a esta comuna no los
+ * ve (cmso_read los oculta), así que no se cancelan acá; los cubre el chequeo de
+ * "comuna destino participando" al aprobarlos (crossSupportRoutes).
  */
 export async function retirarComuna(db: Db, superEventId: number, municipalityId: number) {
   const { rows } = await db.query(
@@ -405,7 +442,21 @@ export async function retirarComuna(db: Db, superEventId: number, municipalityId
       WHERE super_event_id = $1 AND created_by_municipality_id = $2`,
     [superEventId, municipalityId]
   );
-  return rows[0];
+  const { rows: canceladas } = await db.query(
+    `UPDATE CrossMunicipalSupportOffers
+        SET status = 'cancelled',
+            cancel_reason = CASE WHEN from_municipality_id = $2
+                                 THEN 'origen_retirada' ELSE 'destino_retirada' END
+      WHERE super_event_id = $1
+        AND status IN ('draft', 'pending')
+        AND (
+          from_municipality_id = $2
+          OR target_center_id IN (SELECT c.center_id FROM Centers c WHERE c.municipality_id = $2)
+        )
+      RETURNING offer_id`,
+    [superEventId, municipalityId]
+  );
+  return { ...rows[0], ofertas_canceladas: canceladas.length };
 }
 
 /**

@@ -95,6 +95,20 @@ psql_tenant_espera_error() {
   if grep -qi "$3" <<<"$salida"; then echo "bloqueado"; else echo "FUGA"; fi
 }
 
+# Ejecuta varias sentencias como appcopio_app dentro de BEGIN … ROLLBACK y devuelve el
+# resultado de la ÚLTIMA. Sirve para medir el efecto de una escritura (cuántas filas
+# tocó, en qué estado quedó) sin dejarla escrita. El contexto se fija con set_config
+# dentro del propio argumento: tenant con app.current_tenant, Super Administrador con
+# app.is_superadmin = 'true'.
+# Uso: psql_tx_val <sentencias>
+psql_tx_val() {
+  docker compose exec -T db psql -U appcopio_app -d appcopio_mt_db -tAq \
+    -v ON_ERROR_STOP=0 \
+    -c 'BEGIN' \
+    -c "$1" \
+    -c 'ROLLBACK' 2>&1 | tr -d '\r ' | grep -v '^$' | tail -1
+}
+
 # Ejecuta una escritura que la base debe PERMITIR, como appcopio_app y dentro de
 # BEGIN … ROLLBACK. Es la hermana de psql_tenant_espera_error: sirve para acreditar que
 # algo SÍ se puede hacer, sin dejar la fila escrita.
@@ -508,6 +522,18 @@ afirmar "el Super Administrador no puede crear emergencias" \
       -d '{"name":"no deberia"}')" \
   "403"
 
+# La contracara del check de invitar (el siguiente): quien invita solo puede dejar a la
+# otra comuna 'invitada'. Pasar a 'participando' es el consentimiento de ESA comuna y lo
+# da ella con un UPDATE de su propia fila (sep_update). Concón no tiene fila en el SE1,
+# así que el rechazo es de RLS y no de la clave primaria. Si falla en una base que no se
+# recreó con `down -v`, es la política vieja: sep_write vive en la base, no en el .sql.
+afirmar "una comuna participante no puede inscribir a otra como 'participando'" \
+  "$(psql_tenant_espera_error 2 \
+      "INSERT INTO SuperEventParticipants (super_event_id, municipality_id, status, invited_by_municipality_id)
+         VALUES (1, 4, 'participando', 2)" \
+      'row-level security')" \
+  "bloqueado"
+
 # Invitar ya no es privilegio de quien originó el SuperEvento. Viña participa del SE1
 # sin haberlo creado (lo creó el Super Administrador) y aun así puede sumar comunas.
 # Va contra la base y con ROLLBACK para no dejar invitada a Concón.
@@ -517,6 +543,117 @@ afirmar "una comuna participante no originaria puede invitar a otra" \
       INSERT INTO SuperEventParticipants (super_event_id, municipality_id, status, invited_by_municipality_id)
       VALUES (1, 4, 'invitada', 2);")" \
   "permitido"
+
+# --- Retiro de una comuna: ofertas, reinvitación y cierre ---------------------------
+# Todo va contra la base con ROLLBACK, como appcopio_app y con el tenant que corresponde:
+# el sembrado tiene que quedar intacto para lo que sigue. Las sentencias son las mismas
+# que ejecuta el backend (retirarComuna, inviteMunicipalities).
+
+# A. Al retirarse Valparaíso del SE1 se cancelan solas sus ofertas sin resolver: el
+# borrador que ENVIÓ (origen_retirada) y la oferta pendiente que RECIBIÓ de Viña
+# (destino_retirada). La aceptada y la rechazada son historial y no se tocan.
+afirmar "al retirarse una comuna se cancelan sus ofertas sin resolver, enviadas y recibidas" \
+  "$(psql_tx_val "
+      SELECT set_config('app.current_tenant', '1', true);
+      WITH c AS (
+        UPDATE CrossMunicipalSupportOffers
+           SET status = 'cancelled',
+               cancel_reason = CASE WHEN from_municipality_id = 1
+                                    THEN 'origen_retirada' ELSE 'destino_retirada' END
+         WHERE super_event_id = 1 AND status IN ('draft', 'pending')
+           AND (from_municipality_id = 1
+                OR target_center_id IN (SELECT center_id FROM Centers WHERE municipality_id = 1))
+        RETURNING cancel_reason)
+      SELECT string_agg(cancel_reason, ',' ORDER BY cancel_reason) FROM c;")" \
+  "destino_retirada,origen_retirada"
+
+# Y el cierre queda marcado como automático: una cancelación hecha a mano deja
+# cancel_reason en NULL, y eso es lo que las distingue.
+afirmar "una oferta cancelada por un usuario no lleva motivo de cierre automático" \
+  "$(psql_val "SELECT COUNT(*) FROM CrossMunicipalSupportOffers
+                WHERE status = 'cancelled' AND cancel_reason IS NOT NULL;")" "0"
+
+# El retiro de Viña deja fuera lo que no es suyo: una oferta ya aceptada no se cancela.
+afirmar "el retiro no cancela las ofertas ya resueltas" \
+  "$(psql_tx_val "
+      SELECT set_config('app.current_tenant', '2', true);
+      WITH c AS (
+        UPDATE CrossMunicipalSupportOffers SET status = 'cancelled', cancel_reason = 'origen_retirada'
+         WHERE super_event_id = 1 AND status IN ('draft', 'pending')
+           AND (from_municipality_id = 2
+                OR target_center_id IN (SELECT center_id FROM Centers WHERE municipality_id = 2))
+        RETURNING offer_id)
+      SELECT COUNT(*) FROM c;")" \
+  "1"
+
+# B. Reinvitar a una comuna que rechazó (Concón en el SE2) es solo del Super
+# Administrador. Una comuna participante —Viña— no puede pisar esa fila: sep_update
+# solo deja modificar la propia.
+afirmar "una comuna no puede reinvitar a otra que ya rechazó" \
+  "$(psql_tx_val "
+      SELECT set_config('app.current_tenant', '2', true);
+      WITH u AS (
+        UPDATE SuperEventParticipants SET status = 'invitada', responded_at = NULL
+         WHERE super_event_id = 2 AND municipality_id = 4 RETURNING 1)
+      SELECT COUNT(*) FROM u;")" \
+  "0"
+
+reinvitar="INSERT INTO SuperEventParticipants
+             (super_event_id, municipality_id, status, invited_by, invited_by_municipality_id)
+           VALUES (2, %s, 'invitada', NULL, NULL)
+           ON CONFLICT (super_event_id, municipality_id) DO UPDATE
+             SET status = 'invitada', responded_at = NULL, invited_by_municipality_id = NULL
+             WHERE SuperEventParticipants.status IN ('rechazada', 'retirada')
+           RETURNING municipality_id"
+
+afirmar "el Super Administrador reinvita a una comuna que rechazó" \
+  "$(psql_tx_val "
+      SELECT set_config('app.is_superadmin', 'true', true);
+      WITH r AS ($(printf "$reinvitar" 4)) SELECT COUNT(*) FROM r;")" \
+  "1"
+
+afirmar "y también a una que se retiró" \
+  "$(psql_tx_val "
+      SELECT set_config('app.is_superadmin', 'true', true);
+      UPDATE SuperEventParticipants SET status = 'retirada' WHERE super_event_id = 2 AND municipality_id = 2;
+      WITH r AS ($(printf "$reinvitar" 2)) SELECT COUNT(*) FROM r;")" \
+  "1"
+
+afirmar "pero no pisa a una comuna que ya está participando" \
+  "$(psql_tx_val "
+      SELECT set_config('app.is_superadmin', 'true', true);
+      WITH r AS ($(printf "$reinvitar" 2)) SELECT COUNT(*) FROM r;")" \
+  "0"
+
+afirmar "ni a una que sigue con la invitación pendiente" \
+  "$(psql_tx_val "
+      SELECT set_config('app.is_superadmin', 'true', true);
+      WITH r AS ($(printf "$reinvitar" 1)) SELECT COUNT(*) FROM r;")" \
+  "0"
+
+# C. El SE2 lo originó Viña. Mientras participa puede cerrarlo; al retirarse pierde el
+# control, aunque siga figurando como quien lo originó. El Super Administrador es la
+# salida de emergencia, y una comuna que no lo originó nunca pudo.
+cerrar_se2="WITH u AS (UPDATE SuperEvents SET ended_at = now() WHERE super_event_id = 2 RETURNING 1) SELECT COUNT(*) FROM u;"
+
+afirmar "la comuna originaria participando puede cerrar su SuperEvento" \
+  "$(psql_tx_val "SELECT set_config('app.current_tenant', '2', true); $cerrar_se2")" "1"
+
+afirmar "la originaria que se retiró ya no puede cerrarlo" \
+  "$(psql_tx_val "
+      SELECT set_config('app.current_tenant', '2', true);
+      UPDATE SuperEventParticipants SET status = 'retirada' WHERE super_event_id = 2 AND municipality_id = 2;
+      $cerrar_se2")" "0"
+
+afirmar "una comuna que no lo originó tampoco puede cerrarlo" \
+  "$(psql_tx_val "SELECT set_config('app.current_tenant', '1', true); $cerrar_se2")" "0"
+
+afirmar "el Super Administrador siempre puede cerrarlo" \
+  "$(psql_tx_val "
+      SELECT set_config('app.current_tenant', '2', true);
+      UPDATE SuperEventParticipants SET status = 'retirada' WHERE super_event_id = 2 AND municipality_id = 2;
+      SELECT set_config('app.is_superadmin', 'true', true);
+      $cerrar_se2")" "1"
 
 # --- Trazabilidad de lo compartido (RNF7) -------------------------------------------
 afirmar "toda participación resuelta registra cuándo se respondió" \

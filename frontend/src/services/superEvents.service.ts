@@ -175,10 +175,13 @@ export async function respondSuperEvent(
 /**
  * La comuna participante se retira sin cerrar el SuperEvento: deja de compartir sus
  * centros y su emergencia sale del SuperEvento. También ocurre al cerrar esa emergencia.
+ * Sus ofertas sin resolver (borradores y pendientes, enviadas y recibidas) se cancelan
+ * solas; `ofertas_canceladas` dice cuántas.
  */
 export async function withdrawFromSuperEvent(superEventId: number): Promise<{
   super_event_id: number;
   status: EstadoParticipacion;
+  ofertas_canceladas: number;
 }> {
   const { data } = await api.post(`/super-events/${superEventId}/withdraw`);
   return data;

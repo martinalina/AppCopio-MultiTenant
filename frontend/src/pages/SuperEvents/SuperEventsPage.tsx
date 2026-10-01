@@ -7,8 +7,13 @@
 //
 // Quién puede qué:
 //   · Invitar comunas  -> cualquier comuna participante, no solo la que lo originó.
-//   · Cerrar           -> solo el Super Administrador o la comuna originaria,
-//                         porque cerrar le corta la colaboración a todos.
+//   · Cerrar           -> solo el Super Administrador o la comuna originaria
+//                         mientras siga participando, porque cerrar le corta la
+//                         colaboración a todos. Si la originaria se retira, el Super
+//                         Administrador es la salida (traspasar la titularidad a otra
+//                         comuna queda pendiente, fuera de alcance).
+//   · Reinvitar        -> a una comuna que rechazó o se retiró, solo el Super
+//                         Administrador (desde su propio panel).
 import * as React from "react";
 import {
   Alert, Box, Button, Checkbox, Chip, CircularProgress, Dialog, DialogActions,
@@ -22,6 +27,7 @@ import { useNavigate } from "react-router-dom";
 
 import { paths } from "@/routes/paths";
 import { useAuth } from "@/contexts/AuthContext";
+import { isSuperAdmin } from "@/utils/authz";
 import {
   listSuperEvents, listSuperEventParticipants, inviteToSuperEvent, closeSuperEvent,
   withdrawFromSuperEvent,
@@ -63,7 +69,8 @@ export default function SuperEventsPage() {
 
   const puedeCerrar = (se: SuperEvent) =>
     se.created_by_municipality_id != null &&
-    se.created_by_municipality_id === user?.municipality_id;
+    se.created_by_municipality_id === user?.municipality_id &&
+    se.mi_estado === "participando";
 
   return (
     <Box sx={{ p: 3 }}>
@@ -158,7 +165,7 @@ export default function SuperEventsPage() {
                       title={
                         puedeCerrar(se)
                           ? "Cerrar termina la colaboración para todas las comunas"
-                          : "Solo puede cerrarlo el Super Administrador o la comuna que lo originó"
+                          : "Solo puede cerrarlo el Super Administrador o la comuna que lo originó, mientras siga participando"
                       }
                       onClick={() => setCerrar(se)}
                     >
@@ -191,7 +198,11 @@ export default function SuperEventsPage() {
   );
 }
 
-/** Invita comunas que aún no tienen fila en el SuperEvento. */
+/**
+ * Invita comunas que aún no tienen fila en el SuperEvento. Al Super Administrador
+ * además le ofrece las que rechazaron o se retiraron: reinvitarlas es solo suyo, para
+ * que en un evento con muchas comunas ninguna insista sobre una que ya dijo que no.
+ */
 export function InviteDialog({
   superEvento, onClose, onHecho,
 }: {
@@ -199,6 +210,8 @@ export function InviteDialog({
   onClose: () => void;
   onHecho: (aviso: string) => void;
 }) {
+  const { user } = useAuth();
+  const esSuperadmin = isSuperAdmin(user);
   const [comunas, setComunas] = React.useState<Municipality[]>([]);
   const [participantes, setParticipantes] = React.useState<SuperEventParticipant[]>([]);
   const [seleccion, setSeleccion] = React.useState<number[]>([]);
@@ -217,7 +230,16 @@ export function InviteDialog({
       .catch((e) => setError(mensajeError(e, "No se pudieron cargar las comunas.")));
   }, [superEvento?.super_event_id]);
 
-  const yaEstan = new Set(participantes.map((p) => p.municipality_id));
+  // Para una comuna, cualquiera con fila queda fuera. El Super Administrador puede
+  // reinvitar solo las que rechazaron o se retiraron; 'invitada' y 'participando' no.
+  const reinvitables = new Set(
+    participantes
+      .filter((p) => esSuperadmin && (p.status === "rechazada" || p.status === "retirada"))
+      .map((p) => p.municipality_id)
+  );
+  const yaEstan = new Set(
+    participantes.filter((p) => !reinvitables.has(p.municipality_id)).map((p) => p.municipality_id)
+  );
   const invitables = comunas.filter((m) => m.is_active && !yaEstan.has(m.municipality_id));
 
   const enviar = async () => {
@@ -278,7 +300,9 @@ export function InviteDialog({
                     }
                   />
                 }
-                label={`${m.name} (${m.shortname})`}
+                label={`${m.name} (${m.shortname})${
+                  reinvitables.has(m.municipality_id) ? " — reinvitar" : ""
+                }`}
               />
             ))}
           </Stack>
@@ -312,8 +336,13 @@ function WithdrawDialog({
     setEnviando(true);
     setError(null);
     try {
-      await withdrawFromSuperEvent(superEvento.super_event_id);
-      onHecho(`Te retiraste de «${superEvento.name}». Tus centros dejaron de compartirse.`);
+      const r = await withdrawFromSuperEvent(superEvento.super_event_id);
+      onHecho(
+        `Te retiraste de «${superEvento.name}». Tus centros dejaron de compartirse.` +
+          (r.ofertas_canceladas > 0
+            ? ` Se cancelaron automáticamente ${r.ofertas_canceladas} oferta(s) sin resolver.`
+            : "")
+      );
       onClose();
     } catch (e: any) {
       setError(mensajeError(e, "No se pudo completar el retiro."));
@@ -331,8 +360,9 @@ function WithdrawDialog({
           Tus centros dejarán de compartirse con las demás comunas, y tú dejarás de ver
           el tablero y las ofertas. Tu emergencia
           {superEvento?.mi_emergency_name ? ` «${superEvento.mi_emergency_name}»` : ""} sale
-          del SuperEvento pero sigue abierta en tu comuna. Para volver, el Super
-          Administrador tendría que agrupar tu emergencia de nuevo.
+          del SuperEvento pero sigue abierta en tu comuna. Tus ofertas de apoyo sin
+          resolver, enviadas y recibidas, se cancelan automáticamente. Para volver, el
+          Super Administrador tendría que invitar a tu comuna de nuevo.
         </Alert>
       </DialogContent>
       <DialogActions>

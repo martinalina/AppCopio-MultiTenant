@@ -65,8 +65,10 @@ CREATE TABLE SuperEventParticipants (
     -- exige 'participando'.
     -- 'retirada': una comuna que estaba 'participando' salió por su cuenta (botón
     -- Retirarme) o al cerrar la emergencia que aportaba. Distinta de 'rechazada'
-    -- (nunca llegó a participar). Solo el Super Administrador puede reactivarla,
-    -- volviendo a agrupar su emergencia.
+    -- (nunca llegó a participar). Ni una ni otra es definitiva, pero solo el Super
+    -- Administrador puede volver a invitarla (invitando de nuevo o volviendo a
+    -- agrupar su emergencia): así, en un evento con muchas comunas, ninguna insiste
+    -- sobre una que ya dijo que no.
     status          TEXT NOT NULL DEFAULT 'invitada'
         CHECK (status IN ('invitada', 'participando', 'rechazada', 'retirada')),
     invited_by      INT REFERENCES Users(user_id) ON DELETE SET NULL,
@@ -157,6 +159,15 @@ ALTER TABLE CrossMunicipalSupportOffers
     ADD COLUMN super_event_id INT NOT NULL
         REFERENCES SuperEvents(super_event_id) ON DELETE CASCADE;
 
+-- Por qué se canceló una oferta. NULL = la canceló un usuario (la comuna origen, a
+-- mano). Los dos valores son cierres automáticos: la comuna se retiró del SuperEvento
+-- y todo lo que tenía sin resolver se cancela solo. Va aparte de status para que la
+-- oferta siga siendo 'cancelled' —un estado que el resto del sistema ya entiende— y
+-- aun así se pueda distinguir, y saber de qué lado estaba la comuna que salió.
+ALTER TABLE CrossMunicipalSupportOffers
+    ADD COLUMN cancel_reason TEXT
+        CHECK (cancel_reason IN ('origen_retirada', 'destino_retirada'));
+
 
 -- ----------------------------------------------------------
 -- 5. Notificaciones: destino SuperEvento
@@ -208,12 +219,42 @@ CREATE POLICY super_events_write ON SuperEvents
   WITH CHECK (is_superadmin() OR created_by_municipality_id = current_tenant());
 
 -- Cerrar o editar el SuperEvento: solo el Super Administrador o la comuna que lo
--- originó. Invitar SÍ puede cualquiera (sep_write), pero cerrarlo le cortaría la
--- colaboración a todos los demás.
+-- originó, y esta última solo mientras siga 'participando'. Invitar SÍ puede
+-- cualquiera (sep_write), pero cerrarlo le cortaría la colaboración a todos los demás.
+--
+-- Que la originaria pierda el control al retirarse es deliberado: si no, saldría del
+-- evento conservando el poder de terminárselo a quienes se quedaron. Su salida de
+-- emergencia es el Super Administrador. Traspasar la titularidad a otra comuna
+-- participante queda fuera de alcance.
+--
+-- Sin recursión: la subconsulta a SuperEventParticipants se resuelve bajo sep_read,
+-- que solo mira la fila propia y no se autoconsulta.
 CREATE POLICY super_events_update ON SuperEvents
   FOR UPDATE
-  USING      (is_superadmin() OR created_by_municipality_id = current_tenant())
-  WITH CHECK (is_superadmin() OR created_by_municipality_id = current_tenant());
+  USING (
+    is_superadmin()
+    OR (
+      created_by_municipality_id = current_tenant()
+      AND EXISTS (
+        SELECT 1 FROM SuperEventParticipants p
+         WHERE p.super_event_id = SuperEvents.super_event_id
+           AND p.municipality_id = current_tenant()
+           AND p.status = 'participando'
+      )
+    )
+  )
+  WITH CHECK (
+    is_superadmin()
+    OR (
+      created_by_municipality_id = current_tenant()
+      AND EXISTS (
+        SELECT 1 FROM SuperEventParticipants p
+         WHERE p.super_event_id = SuperEvents.super_event_id
+           AND p.municipality_id = current_tenant()
+           AND p.status = 'participando'
+      )
+    )
+  );
 -- Sin política de DELETE: nadie borra un SuperEvento (mismo criterio que Emergencies).
 
 CREATE POLICY sep_read ON SuperEventParticipants
@@ -238,14 +279,24 @@ CREATE POLICY sep_read ON SuperEventParticipants
 -- incluso con WITH CHECK (true), y que deja de fallar si sep_read es USING(true)—.
 -- Por eso inviteMunicipalities() inserta a secas y trata el 23505 como "ya estaba
 -- invitada".
+--
+-- Quien invita solo puede dejar a la otra comuna 'invitada' (status = 'invitada' en la
+-- rama de invitar). Pasar a 'participando' es el consentimiento de ESA comuna y lo da
+-- ella con un UPDATE de su propia fila (sep_update). Sin esta condición, una comuna
+-- participante podía insertar a otra directamente como 'participando' y compartir sus
+-- centros sin su consentimiento: el 'invitada' lo ponían solo el DEFAULT de la columna
+-- y el servicio, no el motor.
 CREATE POLICY sep_write ON SuperEventParticipants
   FOR INSERT
   WITH CHECK (
     is_superadmin()
-    OR super_event_id IN (
-        SELECT p.super_event_id FROM SuperEventParticipants p
-        WHERE p.municipality_id = current_tenant()
-          AND p.status = 'participando'
+    OR (
+      status = 'invitada'
+      AND super_event_id IN (
+          SELECT p.super_event_id FROM SuperEventParticipants p
+          WHERE p.municipality_id = current_tenant()
+            AND p.status = 'participando'
+      )
     )
     -- Bootstrap del camino municipal: exigir estar YA 'participando' para insertar
     -- la propia primera fila es un círculo imposible —nadie puede ser el primer
@@ -501,7 +552,7 @@ RETURNS TABLE (
   target_municipality_id INT, target_municipality_name TEXT,
   item_id INT, item_name TEXT,
   message TEXT, status TEXT, created_at TIMESTAMPTZ,
-  created_by INT, created_by_name TEXT
+  created_by INT, created_by_name TEXT, cancel_reason TEXT
 )
 LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE AS $$
   SELECT o.offer_id, o.super_event_id, se.name::TEXT, se.level::TEXT,
@@ -510,7 +561,7 @@ LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE AS $$
          c.municipality_id, mt.name::TEXT,
          o.item_id, p.name::TEXT,
          o.message::TEXT, o.status::TEXT, o.created_at,
-         o.created_by, u.nombre::TEXT
+         o.created_by, u.nombre::TEXT, o.cancel_reason::TEXT
   FROM CrossMunicipalSupportOffers o
   JOIN SuperEvents se    ON se.super_event_id = o.super_event_id
   JOIN Municipalities mf ON mf.municipality_id = o.from_municipality_id

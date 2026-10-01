@@ -156,7 +156,7 @@ En una sola transacción: crea el SuperEvento, mete su emergencia dentro, se ins
 
 Este camino exigió dos parches de política:
 - `super_events_read` incluye ahora `created_by_municipality_id = current_tenant()`. Sin eso, el `INSERT ... RETURNING` muere con 42501: el `RETURNING` obliga a evaluar la política de `SELECT`, y en ese instante la fila de participante todavía no existe.
-- `sep_write` tiene una cláusula de *bootstrap*: una comuna puede insertar su propia primera fila de participación **solo en el SuperEvento que ella misma originó**. Exigir estar ya `participando` era un círculo imposible. El acotamiento a `created_by_municipality_id` es deliberado: un `municipality_id = current_tenant()` suelto permitiría autoinscribirse en cualquier SuperEvento ajeno y rompería el consentimiento.
+- `sep_write` tiene una cláusula de *bootstrap*: una comuna puede insertar su propia primera fila de participación **solo en el SuperEvento que ella misma originó**. Exigir estar ya `participando` era un círculo imposible. El acotamiento a `created_by_municipality_id` es deliberado: un `municipality_id = current_tenant()` suelto permitiría autoinscribirse en cualquier SuperEvento ajeno y rompería el consentimiento. La rama de *invitar* de la misma política exige además `status = 'invitada'`: quien invita solo puede dejar a la otra comuna invitada, y pasar a `participando` lo decide ella con un `UPDATE` de su propia fila.
 
 ### 6.4 Aceptar o rechazar una invitación a un SuperEvento
 
@@ -272,9 +272,9 @@ El estado depende **solo del rol**, sin ninguna rama sobre el destino. Y la ofer
 
 | Transición | Quién | Desde |
 |---|---|---|
-| → `pending` (aprobar borrador) | Solo la comuna **origen**. Re-verifica participación + vigencia, para que un borrador redactado antes del cierre no se pueda enviar después. | `draft` |
-| → `cancelled` | Solo la comuna **origen** | `draft` o `pending` |
-| → `accepted` / `rejected` | Solo la comuna **destino** | `pending` |
+| → `pending` (aprobar borrador) | Solo la comuna **origen**. Re-verifica participación + vigencia, para que un borrador redactado antes del cierre no se pueda enviar después, y que el centro destino siga siendo compartido (`CENTRO_NO_DISPONIBLE`), para que no se envíe a una comuna que ya se retiró. | `draft` |
+| → `cancelled` | Solo la comuna **origen** (`cancel_reason` queda `NULL`). Además, automático al retirarse una de las dos comunas (§6.12). | `draft` o `pending` |
+| → `accepted` / `rejected` | Solo la comuna **destino**, y solo mientras siga `participando` en un SuperEvento vigente. | `pending` |
 
 La asimetría se aplica en tres niveles: validación de servicio, la política `cmso_update` (origen **o** destino), y `cmso_own_write` para el INSERT (solo origen).
 
@@ -338,13 +338,28 @@ La distinción que el diseño original no tenía, y la corrección más importan
 
 | | Cerrar una **emergencia local** | Cerrar un **SuperEvento** |
 |---|---|---|
-| Quién | Administrador o apoyo admin de la comuna dueña (`soloAdminOApoyo` + RLS) | Super Administrador **o la comuna que lo originó** (`super_events_update`) |
+| Quién | Administrador o apoyo admin de la comuna dueña (`soloAdminOApoyo` + RLS) | Super Administrador **o la comuna que lo originó, mientras siga `participando`** (`super_events_update`) |
 | Efecto en la colaboración | **Ninguno** | **Corta el acceso de inmediato y en un solo punto** |
 | Efecto en la operación local | Cierra el agrupador; las activaciones siguen abiertas | **Ninguno**: cada comuna sigue con su emergencia |
 
 El cierre del SuperEvento revoca el acceso porque `super_event_shared_center_ids()` y `super_event_shared_centers()` exigen `se.ended_at IS NULL`. El tablero queda vacío, no se pueden emitir ofertas nuevas, y no hace falta recorrer y desvincular las activaciones de cada comuna — que era lo que el cierre exigía antes.
 
-Un participante cualquiera que intente cerrar obtiene 0 filas del `UPDATE` y recibe un **404** con el mensaje "solo pueden cerrarlo el Super Administrador y la comuna que lo originó".
+Un participante cualquiera que intente cerrar obtiene 0 filas del `UPDATE` y recibe un **404** con el mensaje "solo pueden cerrarlo el Super Administrador y la comuna que lo originó, mientras siga participando".
+
+### 6.12 Retiro de una comuna
+
+Una comuna `participando` sale del SuperEvento por dos vías, y las dos terminan en la misma función (`retirarComuna`): el botón **Retirarme** (`POST /super-events/:id/withdraw`) y el cierre de la emergencia que aporta. Queda en `retirada`, un estado propio y distinto de `rechazada`: `rechazada` es una comuna que nunca llegó a participar; `retirada`, una que participó y salió.
+
+| Qué | Cómo queda |
+|---|---|
+| Acceso | Deja de compartir sus centros y de ver el tablero, en ambos sentidos (`super_event_shared_centers*` exigen `participando`). Su emergencia sale del SuperEvento, sus activaciones y centros no se tocan. |
+| Ofertas sin resolver | Las `draft` y `pending` que **envió o recibió** en ese SuperEvento pasan a `cancelled` con `cancel_reason = 'origen_retirada'` o `'destino_retirada'`. `cancel_reason = NULL` es una cancelación hecha por un usuario, así que la interfaz puede distinguirlas ("Cancelada (comuna retirada)"). Las ya resueltas son historial y no se tocan. |
+| Borradores ajenos hacia ella | Los que otra comuna redactó hacia un centro suyo no se cancelan solos (`cmso_read` se los oculta): se cortan al intentar enviarlos, porque el centro destino ya no es compartido. |
+| Aceptar / rechazar | Exige seguir `participando` y que el SuperEvento esté vigente. |
+| Volver a entrar | Ni `rechazada` ni `retirada` son definitivas, pero solo el **Super Administrador** puede reinvitar (`POST /:id/invite` o `group-emergencies`): la comuna vuelve a `invitada` y debe aceptar de nuevo aportando una emergencia. Una comuna que reinvite recibe "ya estaba invitada"; así, en un evento con muchas comunas, ninguna insiste sobre una que ya dijo que no. |
+| Cerrar el SuperEvento | Solo el Super Administrador, o la comuna originaria **mientras siga participando**. Si la originaria se retira, pierde el control y el Super Administrador es la salida de emergencia. |
+
+**Fuera de alcance:** traspasar la titularidad del SuperEvento a otra comuna participante cuando la originaria se retira. Hoy, en ese caso, solo el Super Administrador puede cerrarlo.
 
 ---
 

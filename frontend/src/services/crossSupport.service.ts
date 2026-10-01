@@ -84,7 +84,14 @@ export type Oferta = {
   status: EstadoOferta;
   created_at: string;
   created_by_name: string | null;
+  /**
+   * Solo en ofertas `cancelled`. null = la canceló un usuario. Los otros valores son
+   * cierres automáticos: la comuna origen o destino se retiró del SuperEvento.
+   */
+  cancel_reason: MotivoCancelacion | null;
 };
+
+export type MotivoCancelacion = "origen_retirada" | "destino_retirada";
 
 export async function getBoard(superEventId: number): Promise<CentroCompartido[]> {
   const { data } = await api.get<CentroCompartido[]>(`/cross-support/board/${superEventId}`);

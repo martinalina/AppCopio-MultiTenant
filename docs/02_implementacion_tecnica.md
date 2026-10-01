@@ -300,9 +300,9 @@ nuevos de la extensión pasó de 19 a **28**.
 
 ## 6. Catálogo de problemas encontrados
 
-Esta sección es el registro de los **39 defectos** hallados, su causa raíz y su solución. Se
+Esta sección es el registro de los **40 defectos** hallados, su causa raíz y su solución. Se
 agrupan por naturaleza porque la causa raíz se repite dentro de cada grupo: los identificadores
-P1–P39 son estables y sirven para citar cada uno.
+P1–P40 son estables y sirven para citar cada uno.
 
 > Los nombres de tablas y funciones son los que estaban vigentes cuando se encontró cada
 > defecto. Varios cambiaron en la iteración 6: `EmergencyParticipants` pasó a
@@ -614,6 +614,28 @@ medio: amplía el conjunto de políticas que deben cumplirse. En una tabla donde
 filas que el autor no puede leer —y una invitación es exactamente eso— la cláusula deja de ser
 utilizable.
 
+#### P40 — Una comuna participante podía inscribir a otra como `participando`
+
+*Síntoma:* ninguno en la aplicación; apareció al revisar `sep_write` contra la regla de que el
+consentimiento vive en el motor. Escribiendo directo a la base como comuna participante, un
+`INSERT` con `status = 'participando'` para otra comuna pasaba la política.
+
+*Causa:* la rama de invitar de `sep_write` solo exigía que quien inserta ya estuviera
+`participando` en ese SuperEvento; no miraba ni la comuna destino ni el estado de la fila. Que la
+invitación naciera `'invitada'` lo garantizaban solo el `DEFAULT` de la columna y el servicio
+(`inviteMunicipalities`, que lo manda fijo), es decir, la disciplina de quien escribe el código.
+Como `super_event_shared_centers` exige `participando` en ambos lados, esa fila habría compartido
+los centros de la comuna forzada sin su consentimiento (RF9).
+
+*Solución:* la rama de invitar exige `status = 'invitada'`. Pasar a `participando` es el
+consentimiento de la propia comuna y sigue siendo un `UPDATE` de su fila (`sep_update`). La rama
+del Super Administrador y el *bootstrap* de la comuna que origina el evento no cambian.
+
+*Lección:* una regla de consentimiento que vive solo en el servicio no es una garantía; si el
+motor puede imponerla, tiene que imponerla. Y una comprobación que prueba solo al atacante más
+obvio (la comuna **no** participante) deja sin cubrir al que ya tiene un pie adentro: el script
+ahora prueba también a la participante que intenta falsificar el estado de otra.
+
 ---
 
 ## 7. Verificación
@@ -634,6 +656,7 @@ No se usaron pruebas automatizadas; la verificación fue **ejecución real del s
 | Comuna sin invitación intenta inscribirse | `new row violates row-level security policy` |
 | Tablero de un SuperEvento **cerrado**, por una comuna que participa | 0 centros, y `SUPEREVENTO_CERRADO` al ofrecer apoyo |
 | Comuna participante **no originaria** invita a una tercera | Permitido (política `sep_write`) |
+| Comuna participante intenta inscribir a otra como `participando` | `new row violates row-level security policy` (P40) |
 | Una comuna intenta aportar una segunda emergencia al mismo SuperEvento | Rechazado por el índice único parcial |
 | `rolsuper` / `rolbypassrls` de `appcopio_app` | `f` / `f` |
 | Las 16 tablas antes desprotegidas, con tenant VALPO y luego VIÑA | 110 / 0 registros de inventario, sin cruce |

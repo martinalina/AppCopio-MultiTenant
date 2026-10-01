@@ -236,10 +236,11 @@ async function invitarYAvisar(
   superEventId: number,
   municipalityIds: any[],
   invitedBy: number,
-  invitedByMunicipalityId: number | null
+  invitedByMunicipalityId: number | null,
+  esSuperadmin = false
 ) {
   const r = await inviteMunicipalities(
-    pool, superEventId, municipalityIds.map(Number), invitedBy, invitedByMunicipalityId
+    pool, superEventId, municipalityIds.map(Number), invitedBy, invitedByMunicipalityId, esSuperadmin
   );
 
   for (const municipalityId of r.invitadas) {
@@ -269,10 +270,21 @@ const invite: RequestHandler = async (req, res) => {
 
     const r = await invitarYAvisar(
       superEventId, municipality_ids,
-      user.user_id, esSuperadmin ? null : user.municipality_id
+      user.user_id, esSuperadmin ? null : user.municipality_id, esSuperadmin
     );
 
-    res.status(201).json({ super_event_id: superEventId, invitadas: r.invitadas, ya_estaban: r.yaEstaban });
+    // Para una comuna, "ya estaban" incluye a las que rechazaron o se retiraron: no
+    // puede distinguirlas (sep_read le oculta la fila ajena) y tampoco le corresponde
+    // insistir. Reinvitarlas es del Super Administrador.
+    res.status(201).json({
+      super_event_id: superEventId,
+      invitadas: r.invitadas,
+      ya_estaban: r.yaEstaban,
+      ...(!esSuperadmin && r.yaEstaban.length > 0 && {
+        aviso: 'Algunas comunas ya tenían una invitación, o rechazaron o se retiraron. ' +
+               'Volver a invitar a una comuna que rechazó o se retiró solo puede hacerlo el Super Administrador.',
+      }),
+    });
   } catch (err: any) {
     manejarError(res, err, 'inviteMunicipalities');
   }
@@ -313,8 +325,8 @@ const respond: RequestHandler = async (req, res) => {
       res.status(404).json({ error: 'Tu comuna no tiene una invitación a ese SuperEvento.' });
       return;
     }
-    // Solo una invitación pendiente se responde. Una comuna 'retirada' no puede
-    // volver sola: la reactiva el Super Administrador agrupando de nuevo.
+    // Solo una invitación pendiente se responde. Una comuna 'retirada' o 'rechazada'
+    // no puede volver sola: la reinvita el Super Administrador.
     if (estado !== 'invitada') {
       res.status(409).json({
         error: 'INVITACION_NO_PENDIENTE',
@@ -424,7 +436,10 @@ const withdraw: RequestHandler = async (req, res) => {
  * tablero queda vacío y no se pueden crear ofertas nuevas.
  *
  * La política super_events_update lo limita al Super Administrador o a la comuna
- * originaria; un participante cualquiera obtiene 0 filas y recibe un 404.
+ * originaria mientras siga 'participando'; cualquier otra obtiene 0 filas y recibe un
+ * 404. Una originaria que se retiró pierde el control: su salida de emergencia es el
+ * Super Administrador. Traspasar la titularidad a otra comuna queda pendiente, fuera
+ * de alcance.
  */
 const close: RequestHandler = async (req, res) => {
   try {
@@ -441,7 +456,7 @@ const close: RequestHandler = async (req, res) => {
     if (!rows[0]) {
       res.status(404).json({
         error: 'NO_PUEDES_CERRARLO',
-        message: 'El SuperEvento no existe, o solo pueden cerrarlo el Super Administrador y la comuna que lo originó.',
+        message: 'El SuperEvento no existe, o solo pueden cerrarlo el Super Administrador y la comuna que lo originó, mientras siga participando.',
       });
       return;
     }
