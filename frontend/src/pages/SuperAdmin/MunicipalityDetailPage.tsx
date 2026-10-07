@@ -123,7 +123,7 @@ export default function MunicipalityDetailPage() {
             <Chip label={detalle.shortname} />
           </Stack>
           <Typography color="text.secondary" sx={{ mb: 3 }}>
-            {detalle.total_centros} centros · {detalle.total_usuarios} usuarios
+            {detalle.center_seq_counter ?? 0} centros creados · {detalle.total_usuarios} usuarios
           </Typography>
 
           <Paper sx={{ p: 3, mb: 3 }}>

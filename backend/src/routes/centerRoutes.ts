@@ -49,9 +49,9 @@ const router = Router();
 const listCenters: RequestHandler = async (req, res) => {
     try {
         // El Super Administrador solo administra municipalidades: no debe ver centros,
-        // ni siquiera de solo lectura. RLS lo dejaría pasar (is_superadmin() en la
-        // política de Centers existe para that: consultas administrativas puntuales,
-        // como el conteo de MunicipalityDetailPage), así que la restricción va acá.
+        // ni siquiera de solo lectura. La política de Centers tampoco lo admite (sin
+        // tenant fijado no ve ninguna fila), así que esto es una segunda barrera y evita
+        // una consulta que de todos modos volvería vacía.
         if (req.user?.role_id === SUPERADMIN_ROLE_ID) {
             res.json([]);
             return;

@@ -30,7 +30,6 @@ export type MunicipalityAdmin = {
 
 export type MunicipalityDetail = Municipality & {
   total_usuarios: string | number;
-  total_centros: string | number;
   administrador: MunicipalityAdmin | null;
 };
 

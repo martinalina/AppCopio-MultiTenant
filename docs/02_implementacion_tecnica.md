@@ -372,6 +372,15 @@ admitían el rol 4.
 *Solución:* sacar el rol 4 del bloque de rutas municipales, crear un bloque compartido para el
 perfil, y redirigir al superadmin a su propia pantalla tras el login.
 
+*Segunda barrera (iteración posterior):* arreglar la ruta dejaba el problema en el motor: seguía
+siendo cierto que, por SQL, el superadmin podía leer `Persons` o `FamilyGroups` de cualquier comuna.
+Se quitó `OR is_superadmin()` de todas las políticas salvo las de las tablas que su rol administra
+(`Users` —ver, alta y actualizar, sin borrar—, `Emergencies` —ver y agrupar—, `SuperEvents` y sus
+participantes, `Municipalities` y `municipal_zones`). Dos pantallas dependían de conteos que ya no
+puede obtener y se ajustaron: la ficha de comuna muestra «centros creados» (`center_seq_counter`) en
+vez de contar `Centers`, y las emergencias sueltas ya no traen el número de centros vinculados.
+`validar_multitenant.sh` comprueba, con lista blanca, qué tablas y funciones admiten al superadmin.
+
 #### P8 — `categoryRoutes` sin ninguna autenticación
 
 Crear y borrar categorías estaba abierto a cualquiera. Defecto preexistente, corregido al

@@ -73,11 +73,16 @@ export async function getCurrentAdmin(db: Db, municipalityId: number) {
   return rows[0] ?? null;
 }
 
+/**
+ * Ficha de una comuna para el Super Administrador. Solo trae lo que su rol administra:
+ * usuarios y el contador de centros creados (center_seq_counter). No cuenta filas de
+ * Centers: las políticas de esa tabla no admiten al Super Administrador, que por diseño
+ * no accede a datos operativos de ninguna comuna ni siquiera de forma agregada.
+ */
 export async function getMunicipalityDetail(db: Db, municipalityId: number) {
   const { rows } = await db.query(
     `SELECT m.municipality_id, m.name, m.shortname, m.is_active, m.center_seq_counter, m.created_at,
-            (SELECT COUNT(*) FROM Users u WHERE u.municipality_id = m.municipality_id) AS total_usuarios,
-            (SELECT COUNT(*) FROM Centers c WHERE c.municipality_id = m.municipality_id) AS total_centros
+            (SELECT COUNT(*) FROM Users u WHERE u.municipality_id = m.municipality_id) AS total_usuarios
        FROM Municipalities m
       WHERE m.municipality_id = $1`,
     [municipalityId]

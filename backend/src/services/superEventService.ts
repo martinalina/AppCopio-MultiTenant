@@ -307,14 +307,17 @@ export async function groupEmergencies(
   return { super_event_id: superEventId, agrupadas, invitadas };
 }
 
-/** Emergencias abiertas y sin SuperEvento. Para agrupar y para aceptar invitaciones. */
+/**
+ * Emergencias abiertas y sin SuperEvento. Para agrupar y para aceptar invitaciones.
+ *
+ * No cuenta las activaciones vinculadas: el Super Administrador, que es quien agrupa,
+ * no puede leer CentersActivations (dato operativo de cada comuna), así que el conteo
+ * le saldría siempre en cero.
+ */
 export async function listEmergenciasHuerfanas(db: Db) {
   const { rows } = await db.query(
     `SELECT e.emergency_id, e.name, e.type, e.started_at,
-            e.created_by_municipality_id, m.shortname AS municipality_shortname,
-            (SELECT COUNT(*) FROM CentersActivations ca
-              WHERE ca.emergency_id = e.emergency_id AND ca.ended_at IS NULL)::int
-              AS activaciones_vinculadas
+            e.created_by_municipality_id, m.shortname AS municipality_shortname
        FROM Emergencies e
        JOIN Municipalities m ON m.municipality_id = e.created_by_municipality_id
       WHERE e.super_event_id IS NULL AND e.ended_at IS NULL

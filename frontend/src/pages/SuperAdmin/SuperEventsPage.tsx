@@ -156,7 +156,6 @@ export default function SuperAdminSuperEventsPage() {
                   <TableCell>Emergencia</TableCell>
                   <TableCell>Comuna</TableCell>
                   <TableCell>Tipo</TableCell>
-                  <TableCell align="center">Centros vinculados</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -165,7 +164,6 @@ export default function SuperAdminSuperEventsPage() {
                     <TableCell>{em.name}</TableCell>
                     <TableCell>{em.municipality_shortname}</TableCell>
                     <TableCell>{em.type ?? "—"}</TableCell>
-                    <TableCell align="center">{em.activaciones_vinculadas}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -327,7 +325,7 @@ function GroupDialog({
                   }
                 />
               }
-              label={`${em.name} · ${em.municipality_shortname} · ${em.activaciones_vinculadas} centro(s)`}
+              label={`${em.name} · ${em.municipality_shortname}`}
             />
           ))}
         </Stack>

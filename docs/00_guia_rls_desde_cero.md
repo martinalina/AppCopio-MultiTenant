@@ -137,11 +137,16 @@ ALTER TABLE Centers FORCE ROW LEVEL SECURITY;
 
 -- PASO 3: abrir la puerta justa con una política.
 CREATE POLICY centers_tenant_isolation ON Centers
-  USING      (municipality_id = current_tenant() OR is_superadmin())
-  WITH CHECK (municipality_id = current_tenant() OR is_superadmin());
+  USING      (municipality_id = current_tenant())
+  WITH CHECK (municipality_id = current_tenant());
 ```
 
-Esas tres líneas, repetidas sobre más de 40 tablas, **son** la migración multi-tenant.
+> El Super Administrador no aparece en la política: su contexto no fija comuna, así que
+> sobre `Centers` no ve ninguna fila. Solo las tablas que su rol administra (`Users`,
+> `Emergencies`, `SuperEvents` y sus participantes, `Municipalities` y `municipal_zones`)
+> lo admiten, y cada una lo declara en su propia política.
+
+Esas tres líneas, repetidas sobre 38 tablas, **son** la migración multi-tenant.
 Todo lo demás es consecuencia.
 
 ### `ENABLE` vs `FORCE`: la diferencia que arruina todo si se omite
@@ -213,8 +218,7 @@ CREATE POLICY cip_public_read ON CenterItemPriority FOR SELECT
 
 -- 3) Centros de otras comunas que comparten un SuperEvento conmigo (db/002d)
 CREATE POLICY cip_intermunicipal_read ON CenterItemPriority FOR SELECT
-  USING (is_superadmin()
-         OR center_id IN (SELECT s.center_id FROM super_event_shared_center_ids() s));
+  USING (center_id IN (SELECT s.center_id FROM super_event_shared_center_ids() s));
 ```
 
 Que se sumen con OR tiene una consecuencia peligrosa que se explica más abajo (problema
@@ -255,7 +259,7 @@ justamente para poder rescatar la base cuando algo sale mal, así que ninguna po
 detiene.
 
 El AppCopio single-tenant se conectaba como `postgres`, el superusuario que crea Docker
-por defecto. Si eso se hubiera dejado así, **las 40+ tablas con RLS habrían quedado
+por defecto. Si eso se hubiera dejado así, **las 38 tablas con RLS habrían quedado
 exactamente igual de desprotegidas que antes**, y peor: con la falsa sensación de estar
 protegidas. Todas las políticas escritas, ninguna aplicada.
 
@@ -377,7 +381,8 @@ CREATE OR REPLACE FUNCTION current_tenant() RETURNS INT AS $$
   SELECT NULLIF(current_setting('app.current_tenant', true), '')::INT;
 $$ LANGUAGE sql STABLE;
 
--- ¿Es el Super Administrador? (no tiene comuna, ve todo)
+-- ¿Es el Super Administrador? (no tiene comuna; solo las políticas que lo
+-- nombran expresamente lo admiten: no ve datos operativos de ninguna comuna)
 CREATE OR REPLACE FUNCTION is_superadmin() RETURNS BOOLEAN AS $$
   SELECT COALESCE(current_setting('app.is_superadmin', true), 'false') = 'true';
 $$ LANGUAGE sql STABLE;
@@ -521,7 +526,7 @@ SuperEvento e invitar comunas: si la invitación falla, no queda un SuperEvento 
 
 | Middleware | Cuándo | Qué fija | Qué ve |
 | --- | --- | --- | --- |
-| `withTenant` | Rutas autenticadas | `app.current_tenant` o `app.is_superadmin` | Lo de su comuna (o todo, si es Super Administrador) |
+| `withTenant` | Rutas autenticadas | `app.current_tenant` o `app.is_superadmin` | Lo de su comuna (el Super Administrador, solo lo que administra: usuarios, SuperEventos, emergencias para agruparlas) |
 | `withPublicContext` | Rutas públicas sin sesión | `app.public_access` | Solo lo que las políticas públicas permiten |
 | `withTenantOrPublic` | Rutas de doble uso | Uno **u** otro, nunca ambos | Según haya sesión o no |
 
@@ -799,14 +804,11 @@ LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE AS $$
    AND duena.municipality_id = c.municipality_id
    AND duena.status = 'participando'
   WHERE c.is_active = TRUE
-    AND (
-      is_superadmin()
-      OR EXISTS (                                  -- y QUIEN LEE también participa
-        SELECT 1 FROM SuperEventParticipants yo
-        WHERE yo.super_event_id = p_super_event_id
-          AND yo.municipality_id = current_tenant()
-          AND yo.status = 'participando'
-      )
+    AND EXISTS (                                   -- y QUIEN LEE también participa
+      SELECT 1 FROM SuperEventParticipants yo     -- (sin excepción para el superadmin)
+      WHERE yo.super_event_id = p_super_event_id
+        AND yo.municipality_id = current_tenant()
+        AND yo.status = 'participando'
     );
 $$;
 ```
@@ -842,7 +844,7 @@ GRANT EXECUTE ON FUNCTION super_event_shared_centers(INT) TO appcopio_app;
 
 ---
 
-## 9. Cómo se cubrieron más de 40 tablas: cuatro patrones
+## 9. Cómo se cubrieron 38 tablas: cuatro patrones
 
 No todas las tablas se parecen. `Centers` tiene comuna propia; `DatasetFieldOptions`
 cuelga de un campo, que cuelga de un dataset, que sí tiene comuna. Se usó el patrón más
@@ -867,8 +869,8 @@ BEGIN
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
     EXECUTE format(
       'CREATE POLICY %I_tenant_isolation ON %I
-         USING      (municipality_id = current_tenant() OR is_superadmin())
-         WITH CHECK (municipality_id = current_tenant() OR is_superadmin())',
+         USING      (municipality_id = current_tenant())
+         WITH CHECK (municipality_id = current_tenant())',
       t, t);
   END LOOP;
 END $$;
@@ -887,11 +889,9 @@ plataforma) o propios de una comuna:
 -- db/002a, sección 8
 CREATE POLICY categories_tenant_or_global ON Categories
   USING      (municipality_id IS NULL          -- ← catálogo global, visible para todos
-              OR municipality_id = current_tenant()
-              OR is_superadmin())
+              OR municipality_id = current_tenant())
   WITH CHECK (municipality_id IS NULL
-              OR municipality_id = current_tenant()
-              OR is_superadmin());
+              OR municipality_id = current_tenant());
 ```
 
 Eso obligó además a repensar los índices únicos. El original era `UNIQUE(name)` global,

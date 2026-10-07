@@ -73,13 +73,11 @@ ALTER TABLE CenterNotifications FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY centernotif_tenant ON CenterNotifications
   USING (
-    is_superadmin()
-    OR municipality_id = current_tenant()
+    municipality_id = current_tenant()
     OR center_id IN (SELECT c.center_id FROM Centers c WHERE c.municipality_id = current_tenant())
   )
   WITH CHECK (
-    is_superadmin()
-    OR municipality_id = current_tenant()
+    municipality_id = current_tenant()
     OR center_id IN (SELECT c.center_id FROM Centers c WHERE c.municipality_id = current_tenant())
   );
 

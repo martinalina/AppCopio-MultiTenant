@@ -268,6 +268,13 @@ $$;
 --    Ojo: los nombres van en minúscula. Las tablas se crearon sin
 --    comillas, así que en pg_class son 'users', 'centers', etc.
 --    format('%I','Users') produciría "Users" y fallaría.
+--
+--    La política es aislamiento de tenant PURO: sin cláusula para el Super
+--    Administrador. Su contexto no fija comuna, así que sobre estas tablas no ve
+--    nada (current_tenant() es NULL y la igualdad nunca se cumple). Las únicas
+--    tablas que lo admiten son las que su rol administra —Users, Emergencies,
+--    SuperEvents y sus participantes, Municipalities y municipal_zones—, y cada una
+--    lo declara en su propia política. validar_multitenant.sh comprueba esa lista.
 -- ----------------------------------------------------------
 
 DO $$
@@ -277,12 +284,23 @@ BEGIN
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
     EXECUTE format(
-      'CREATE POLICY %I_tenant_isolation ON %I USING (municipality_id = current_tenant() OR is_superadmin())
-       WITH CHECK (municipality_id = current_tenant() OR is_superadmin())',
+      'CREATE POLICY %I_tenant_isolation ON %I USING (municipality_id = current_tenant())
+       WITH CHECK (municipality_id = current_tenant())',
       t, t
     );
   END LOOP;
 END $$;
+
+-- Excepción 1 de 2 sobre tablas con tenant directo: Users. El Super Administrador
+-- nombra y releva a los administradores de cada comuna (RF2), así que necesita ver,
+-- dar de alta y actualizar usuarios de cualquier comuna. NO puede borrarlos: no hay
+-- política de DELETE para él.
+CREATE POLICY users_superadmin_select ON Users
+  FOR SELECT USING (is_superadmin());
+CREATE POLICY users_superadmin_insert ON Users
+  FOR INSERT WITH CHECK (is_superadmin());
+CREATE POLICY users_superadmin_update ON Users
+  FOR UPDATE USING (is_superadmin()) WITH CHECK (is_superadmin());
 
 -- Excepción: el mapa público (sin login) muestra SOLO los centros activos.
 CREATE POLICY centers_public_read ON Centers
@@ -316,17 +334,27 @@ CREATE POLICY datasets_public_read ON Datasets
 DO $$
 DECLARE t TEXT;
 BEGIN
-  FOREACH t IN ARRAY ARRAY['categories','products','templates','municipal_zones'] LOOP
+  FOREACH t IN ARRAY ARRAY['categories','products','templates'] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
     EXECUTE format(
       'CREATE POLICY %I_tenant_or_global ON %I
-         USING (municipality_id IS NULL OR municipality_id = current_tenant() OR is_superadmin())
-         WITH CHECK (municipality_id IS NULL OR municipality_id = current_tenant() OR is_superadmin())',
+         USING (municipality_id IS NULL OR municipality_id = current_tenant())
+         WITH CHECK (municipality_id IS NULL OR municipality_id = current_tenant())',
       t, t
     );
   END LOOP;
 END $$;
+
+-- Zonas municipales: catálogo geográfico (no datos de personas ni de operación). Es
+-- la única tabla de catálogo que admite al Super Administrador, porque el endpoint de
+-- migración de zonas (POST /api/migrate/migrate-zones, solo Super Administrador) las
+-- siembra para una comuna que no es la suya.
+ALTER TABLE municipal_zones ENABLE ROW LEVEL SECURITY;
+ALTER TABLE municipal_zones FORCE ROW LEVEL SECURITY;
+CREATE POLICY municipal_zones_tenant_or_global ON municipal_zones
+  USING (municipality_id IS NULL OR municipality_id = current_tenant() OR is_superadmin())
+  WITH CHECK (municipality_id IS NULL OR municipality_id = current_tenant() OR is_superadmin());
 
 -- ----------------------------------------------------------
 -- 9. RLS: tablas de colaboración intermunicipal
@@ -339,8 +367,17 @@ ALTER TABLE Emergencies FORCE ROW LEVEL SECURITY;
 -- lectura ampliada entre comunas no pasa por acá, la resuelven las funciones
 -- super_event_* de 002d.
 CREATE POLICY emergencies_tenant_isolation ON Emergencies
-  USING      (is_superadmin() OR created_by_municipality_id = current_tenant())
-  WITH CHECK (is_superadmin() OR created_by_municipality_id = current_tenant());
+  USING      (created_by_municipality_id = current_tenant())
+  WITH CHECK (created_by_municipality_id = current_tenant());
+
+-- Excepción 2 de 2 sobre tablas con tenant: el Super Administrador agrupa emergencias
+-- existentes bajo un SuperEvento, así que necesita listarlas y cambiarles el
+-- super_event_id. No puede crearlas (no hay política de INSERT para él: toda
+-- emergencia es local) ni borrarlas.
+CREATE POLICY emergencies_superadmin_select ON Emergencies
+  FOR SELECT USING (is_superadmin());
+CREATE POLICY emergencies_superadmin_update ON Emergencies
+  FOR UPDATE USING (is_superadmin()) WITH CHECK (is_superadmin());
 -- Sin política de DELETE: nadie borra una emergencia.
 
 ALTER TABLE CrossMunicipalSupportOffers ENABLE ROW LEVEL SECURITY;
@@ -401,13 +438,13 @@ CREATE POLICY cip_own_delete ON CenterItemPriority
 ALTER TABLE CentersDescription ENABLE ROW LEVEL SECURITY;
 ALTER TABLE CentersDescription FORCE ROW LEVEL SECURITY;
 CREATE POLICY centersdesc_tenant ON CentersDescription
-  USING (is_superadmin() OR center_id IN (SELECT c.center_id FROM Centers c WHERE c.municipality_id = current_tenant()))
+  USING (center_id IN (SELECT c.center_id FROM Centers c WHERE c.municipality_id = current_tenant()))
   WITH CHECK (center_id IN (SELECT c.center_id FROM Centers c WHERE c.municipality_id = current_tenant()));
 
 ALTER TABLE FamilyGroupMembers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE FamilyGroupMembers FORCE ROW LEVEL SECURITY;
 CREATE POLICY fgm_tenant ON FamilyGroupMembers
-  USING (is_superadmin() OR family_id IN (SELECT fg.family_id FROM FamilyGroups fg WHERE fg.municipality_id = current_tenant()))
+  USING (family_id IN (SELECT fg.family_id FROM FamilyGroups fg WHERE fg.municipality_id = current_tenant()))
   WITH CHECK (family_id IN (SELECT fg.family_id FROM FamilyGroups fg WHERE fg.municipality_id = current_tenant()));
 
 -- ----------------------------------------------------------

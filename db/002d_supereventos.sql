@@ -331,8 +331,8 @@ ALTER TABLE EmergencyActivationInvitations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE EmergencyActivationInvitations FORCE ROW LEVEL SECURITY;
 
 CREATE POLICY eai_tenant_isolation ON EmergencyActivationInvitations
-  USING      (is_superadmin() OR municipality_id = current_tenant())
-  WITH CHECK (is_superadmin() OR municipality_id = current_tenant());
+  USING      (municipality_id = current_tenant())
+  WITH CHECK (municipality_id = current_tenant());
 
 
 -- ----------------------------------------------------------
@@ -436,14 +436,13 @@ LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE AS $$
    AND duena.municipality_id = c.municipality_id
    AND duena.status = 'participando'
   WHERE c.is_active = TRUE
-    AND (
-      is_superadmin()
-      OR EXISTS (
-        SELECT 1 FROM SuperEventParticipants yo
-        WHERE yo.super_event_id = p_super_event_id
-          AND yo.municipality_id = current_tenant()
-          AND yo.status = 'participando'
-      )
+    -- Sin excepción para el Super Administrador: el tablero es información
+    -- operativa de las comunas, y solo la ve quien participa del SuperEvento.
+    AND EXISTS (
+      SELECT 1 FROM SuperEventParticipants yo
+      WHERE yo.super_event_id = p_super_event_id
+        AND yo.municipality_id = current_tenant()
+        AND yo.status = 'participando'
     )
   ORDER BY m.name, e.name, c.name;
 $$;
@@ -453,10 +452,7 @@ $$;
 --     en 002b.
 CREATE POLICY cip_intermunicipal_read ON CenterItemPriority
   FOR SELECT
-  USING (
-    is_superadmin()
-    OR center_id IN (SELECT s.center_id FROM super_event_shared_center_ids() s)
-  );
+  USING (center_id IN (SELECT s.center_id FROM super_event_shared_center_ids() s));
 
 -- 7e. Aviso de oferta a la comuna DESTINO. Igual que en 002c, pero sobre
 --     super_event_id: la política centernotif_tenant solo deja escribir avisos
@@ -542,8 +538,9 @@ $$;
 --
 --     Un JOIN normal a Centers pasa por RLS: la comuna que OFRECE no puede
 --     resolver el nombre del centro ajeno y la fila saldría sin destino. Esta
---     función replica exactamente la visibilidad de la política cmso_read (origen,
---     destino o superadmin) y resuelve los nombres del lado de la base.
+--     función replica exactamente la visibilidad de la política cmso_read (origen
+--     o destino, y este último solo si no es borrador) y resuelve los nombres del
+--     lado de la base.
 CREATE OR REPLACE FUNCTION support_offers_visible()
 RETURNS TABLE (
   offer_id INT, super_event_id INT, super_event_name TEXT, super_event_level TEXT,
@@ -569,8 +566,7 @@ LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE AS $$
   JOIN Municipalities mt ON mt.municipality_id = c.municipality_id
   LEFT JOIN Products p   ON p.item_id = o.item_id
   LEFT JOIN Users u      ON u.user_id = o.created_by
-  WHERE is_superadmin()
-     OR o.from_municipality_id = current_tenant()
+  WHERE o.from_municipality_id = current_tenant()
      OR (o.status <> 'draft' AND c.municipality_id = current_tenant())
   ORDER BY o.created_at DESC;
 $$;

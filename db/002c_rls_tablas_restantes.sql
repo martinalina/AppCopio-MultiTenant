@@ -132,8 +132,8 @@ BEGIN
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
     EXECUTE format(
       'CREATE POLICY %I_tenant_isolation ON %I
-         USING (municipality_id = current_tenant() OR is_superadmin())
-         WITH CHECK (municipality_id = current_tenant() OR is_superadmin())',
+         USING (municipality_id = current_tenant())
+         WITH CHECK (municipality_id = current_tenant())',
       t, t
     );
   END LOOP;
@@ -143,8 +143,8 @@ END $$;
 ALTER TABLE ResourceBoxes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ResourceBoxes FORCE ROW LEVEL SECURITY;
 CREATE POLICY resourceboxes_tenant_or_global ON ResourceBoxes
-  USING (municipality_id IS NULL OR municipality_id = current_tenant() OR is_superadmin())
-  WITH CHECK (municipality_id IS NULL OR municipality_id = current_tenant() OR is_superadmin());
+  USING (municipality_id IS NULL OR municipality_id = current_tenant())
+  WITH CHECK (municipality_id IS NULL OR municipality_id = current_tenant());
 
 -- ----------------------------------------------------------
 -- 3. Política por subconsulta al padre (tablas satélite)
@@ -329,8 +329,7 @@ ALTER TABLE RefreshTokens FORCE ROW LEVEL SECURITY;
 CREATE POLICY cmso_read ON CrossMunicipalSupportOffers
   FOR SELECT
   USING (
-    is_superadmin()
-    OR from_municipality_id = current_tenant()
+    from_municipality_id = current_tenant()
     OR (
       status <> 'draft'
       AND target_center_id IN (

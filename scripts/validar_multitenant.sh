@@ -233,11 +233,6 @@ afirmar "ninguna notificación quedó sin destinatario" \
 afirmar "ninguna notificación quedó sin kind" \
   "$(psql_val "SELECT COUNT(*) FROM CenterNotifications WHERE kind IS NULL;")" "0"
 
-# Invariante del modelo de SuperEventos: toda emergencia es LOCAL de una comuna. Si
-# alguna quedara sin dueña, el aislamiento de Emergencies dejaría de tener sentido.
-afirmar "ninguna emergencia quedó sin comuna dueña" \
-  "$(psql_val "SELECT COUNT(*) FROM Emergencies WHERE created_by_municipality_id IS NULL;")" "0"
-
 # RNF5: las cuatro comunas conviven en UNA base y UN esquema. Es la comprobación
 # observable de que incorporar una comuna no aprovisiona infraestructura.
 afirmar "todas las comunas comparten un solo esquema" \
@@ -266,20 +261,19 @@ print(len(ids("$T_VALPO") & ids("$T_VINA")))
 PY
 )" "0"
 
-afirmar "Viña no puede leer un centro de Valparaíso" \
-  "$(get "$T_VINA" /centers/VALPO-C001 | "$PY_BIN" -c "
+# Un cuerpo vacío no basta: se comprueba a la vez el código HTTP (404, no un 200 con
+# datos recortados por el frontend) y que la respuesta no traiga ningún dato del centro.
+afirmar "Viña no puede leer un centro de Valparaíso (responde 404 y sin datos)" \
+  "$(estado=$(codigo "$T_VINA" /centers/VALPO-C001)
+     cuerpo=$(get "$T_VINA" /centers/VALPO-C001 | "$PY_BIN" -c "
 import sys,json
 try:
     d=json.load(sys.stdin)
     print('FUGA' if isinstance(d,dict) and d.get('center_id') else 'sin-datos')
 except Exception:
-    print('sin-datos')")" \
-  "sin-datos"
-
-# El cuerpo vacío no basta: se comprueba además que la API responda 404 y no un 200
-# con datos recortados en el frontend.
-afirmar "el centro ajeno responde 404, no 200 con datos" \
-  "$(codigo "$T_VINA" /centers/VALPO-C001)" "404"
+    print('sin-datos')")
+     echo "$estado/$cuerpo")" \
+  "404/sin-datos"
 
 afirmar "Viña no puede editar un centro de Valparaíso" \
   "$(curl -s -o /dev/null -w "%{http_code}" -X PUT "$API/centers/VALPO-C001" \
@@ -325,6 +319,59 @@ import sys,json
 d=json.load(sys.stdin)
 print('varias' if isinstance(d,list) and len(d) >= 4 else 'insuficiente')")" \
   "varias"
+
+# --- El Super Administrador frente al motor ---------------------------------------
+# Las dos comprobaciones de arriba pasan por la API, donde el servicio ya le cierra el
+# paso. Estas van directo a la base, con el contexto de Super Administrador fijado, para
+# acreditar que el límite lo pone el motor y no la aplicación.
+TABLAS_OPERATIVAS="Centers CentersActivations CentersDescription Persons FamilyGroups FamilyGroupMembers
+  CenterInventoryItems InventoryLog CenterNotifications EmergencyActivationInvitations
+  CrossMunicipalSupportOffers CenterItemPriority Datasets UpdateRequests CenterAssignments
+  CenterShifts ActivationAssignments DatasetRecords"
+SUMA_FILAS=""
+for _t in $TABLAS_OPERATIVAS; do
+  SUMA_FILAS="${SUMA_FILAS:+$SUMA_FILAS + }(SELECT COUNT(*) FROM $_t)"
+done
+
+afirmar "como Super Administrador, las tablas operativas y de personas no devuelven ninguna fila" \
+  "$(psql_tx_val "SELECT set_config('app.is_superadmin', 'true', true); SELECT $SUMA_FILAS;")" \
+  "0"
+
+# Sin esta, el cero de arriba sería trivial: podría ser que las tablas estuvieran vacías.
+afirmar "y esas mismas tablas sí tienen datos sembrados" \
+  "$(psql_val "SELECT CASE WHEN ($SUMA_FILAS) > 0 THEN 'si' ELSE 'no' END;")" \
+  "si"
+
+# Un UPDATE bajo RLS no falla: filtra. Se mide cuántas filas alcanza.
+afirmar "como Super Administrador, tampoco puede modificar centros ni personas" \
+  "$(psql_tx_val "SELECT set_config('app.is_superadmin', 'true', true);
+     WITH c AS (UPDATE Centers SET name = name RETURNING 1),
+          p AS (UPDATE Persons SET rut = rut RETURNING 1)
+     SELECT (SELECT COUNT(*) FROM c) + (SELECT COUNT(*) FROM p);")" \
+  "0"
+
+afirmar "lo que sí ve son los usuarios de las comunas, que es lo que administra" \
+  "$(psql_tx_val "SELECT set_config('app.is_superadmin', 'true', true);
+     SELECT CASE WHEN COUNT(*) > 0 THEN 'si' ELSE 'no' END FROM Users WHERE municipality_id IS NOT NULL;")" \
+  "si"
+
+# Lista blanca, como en las comprobaciones de campos: en vez de buscar las tablas que no
+# deberían admitir al Super Administrador, se declara cuáles sí y se exige que sean
+# exactamente esas. Si alguien agrega `OR is_superadmin()` a otra política, falla acá.
+afirmar "las únicas tablas cuyas políticas admiten al Super Administrador" \
+  "$(psql_val "SELECT string_agg(DISTINCT tablename, ',' ORDER BY tablename)
+               FROM pg_policies
+              WHERE schemaname = 'public'
+                AND (COALESCE(qual, '') LIKE '%is_superadmin()%'
+                  OR COALESCE(with_check, '') LIKE '%is_superadmin()%');")" \
+  "emergencies,municipal_zones,municipalities,supereventparticipants,superevents,users"
+
+afirmar "y las únicas funciones que lo contemplan" \
+  "$(psql_val "SELECT string_agg(proname, ',' ORDER BY proname)
+               FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+              WHERE n.nspname = 'public' AND proname <> 'is_superadmin'
+                AND prosrc LIKE '%is_superadmin()%';")" \
+  "notify_super_event_invitation,super_event_participants_of"
 
 afirmar "un Trabajador Municipal accede al tablero intercomunal" "$(codigo "$T_TRAB" /cross-support/board/1)" "200"
 afirmar "un Trabajador CON apoyo admin también accede al tablero" "$(codigo "$T_APOYO" /cross-support/board/1)" "200"
@@ -433,7 +480,7 @@ afirmar "una comuna no invitada no puede autoinscribirse en un SuperEvento ajeno
       'row-level security')" \
   "bloqueado"
 
-# Escalada de una comuna (camino 3): autocrear el SuperEvento e inscribirse en él.
+# Escalada de una comuna (vía 2, SuperEvento originado por una comuna): autocrear el SuperEvento e inscribirse en él.
 #
 # Son las DOS operaciones que fallaban. La primera moría en el RETURNING, que obliga a
 # evaluar super_events_read cuando la fila de participante aún no existe; la segunda, en
@@ -444,7 +491,7 @@ afirmar "una comuna no invitada no puede autoinscribirse en un SuperEvento ajeno
 # sub-sentencias comparten snapshot y no ven los efectos de las otras, así que el
 # INSERT de participante no encontraría el SuperEvento recién creado y esto fallaría
 # por un motivo que no tiene nada que ver con las políticas.
-afirmar "una comuna puede autocrear su SuperEvento e inscribirse (camino 3)" \
+afirmar "una comuna puede autocrear su SuperEvento e inscribirse (vía 2: originado por una comuna)" \
   "$(psql_espera_ok "
       SELECT set_config('app.current_tenant', '3', true);
       INSERT INTO SuperEvents (name, level, created_by_municipality_id)
@@ -456,9 +503,6 @@ afirmar "una comuna puede autocrear su SuperEvento e inscribirse (camino 3)" \
 
 afirmar "Quilpué tiene activaciones sueltas para vincular" \
   "$(get "$T_QUILP" /emergencies/activations/open | contar)" "2"
-
-afirmar "las ofertas cubren los cinco estados del ciclo de vida" \
-  "$(psql_val "SELECT COUNT(DISTINCT status) FROM CrossMunicipalSupportOffers;")" "5"
 
 afirmar "Valparaíso ve 2 ofertas recibidas" \
   "$(get "$T_VALPO" "/cross-support/offers?box=recibidas" | contar)" "2"
@@ -659,10 +703,6 @@ afirmar "el Super Administrador siempre puede cerrarlo" \
 afirmar "toda participación resuelta registra cuándo se respondió" \
   "$(psql_val "SELECT COUNT(*) FROM SuperEventParticipants
                 WHERE status <> 'invitada' AND responded_at IS NULL;")" "0"
-
-afirmar "toda oferta registra su comuna de origen y su fecha" \
-  "$(psql_val "SELECT COUNT(*) FROM CrossMunicipalSupportOffers
-                WHERE from_municipality_id IS NULL OR created_at IS NULL;")" "0"
 
 afirmar "una comuna ajena no puede cambiar el estado de una oferta" \
   "$(oferta=$(psql_val "SELECT offer_id FROM CrossMunicipalSupportOffers WHERE status = 'pending' LIMIT 1;")

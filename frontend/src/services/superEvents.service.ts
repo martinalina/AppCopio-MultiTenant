@@ -77,7 +77,6 @@ export type EmergenciaHuerfana = {
   started_at: string;
   created_by_municipality_id: number;
   municipality_shortname: string;
-  activaciones_vinculadas: number;
 };
 
 export async function listSuperEvents(): Promise<SuperEvent[]> {
